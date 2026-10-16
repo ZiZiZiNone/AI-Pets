@@ -1,0 +1,117 @@
+id: "nyx_abyssal_familiar"
+name: "NYX 夜蚀星轨使魔"
+version: "2.0.0"
+type: "sprite"
+description: "环绕黄金星盘法阵、拥有异色星瞳与暗影触角的神秘学使魔"
+
+model:
+  entry: "idle.svg"
+  scale: 1.0
+  offset:
+    x: 0
+    y: 0
+  fps: 60
+  animations:
+    idle:
+      file: "idle.svg"
+      loop: true
+    happy:
+      file: "idle.svg"
+      loop: false
+      duration_ms: 2300
+    pat:
+      file: "idle.svg"
+      loop: false
+      duration_ms: 1900
+    feed:
+      file: "idle.svg"
+      loop: false
+      duration_ms: 2500
+    drag:
+      file: "idle.svg"
+      loop: true
+    climb:
+      file: "idle.svg"
+      loop: true
+    sleep:
+      file: "idle.svg"
+      loop: true
+
+expressions:
+  neutral:
+    tint: 0xffffff
+  smile:
+    tint: 0xfef08a
+  surprised:
+    tint: 0xe9d5ff
+  sleepy:
+    tint: 0xc4b5fd
+
+hit_areas:
+  - name: "head"
+    label: "抚摸星冠耳饰"
+    rect:
+      x: 75
+      y: 35
+      w: 170
+      h: 120
+    motion: "pat"
+    expression: "smile"
+    texts:
+      - "喵呜~ 星轨罗盘正在为你占卜今日的无 Bug 吉兆 ✦"
+      - "契约者，触碰第三星瞳会唤醒深渊灵感哦。"
+  - name: "body"
+    label: "共鸣星光吊坠"
+    rect:
+      x: 88
+      y: 160
+      w: 144
+      h: 125
+    motion: "happy"
+    expression: "surprised"
+    texts:
+      - "黄金星盘已展开，要把枯燥的文档献祭给我解析吗？"
+      - "在全屏游戏里我也会收敛气息，贴在屏幕边缘守护你~"
+
+drop_handlers:
+  - extensions: ["*"]
+    motion: "feed"
+    expression: "smile"
+    bubble_template: "✦ 星轨祭坛已吞噬卷轴 [{filename}]，正在推演真理..."
+    action:
+      type: "exec"
+      command: "python"
+      args: ["-c", "import sys, os; p=sys.argv[1]; sz=os.path.getsize(p); print(f'✦ 炼金解析完毕：[{os.path.basename(p)}] 蕴含 {sz} 字节以太能量！')"]
+
+menus:
+  - id: "nyx_arcane"
+    label: "星盘秘术"
+    icon: "🔮"
+    children:
+      - id: "nyx_divination"
+        label: "今日代码占卜"
+        icon: "✨"
+        action:
+          type: "emit"
+          app_id: "internal"
+          event: "pet.fortune_divination"
+          payload: {}
+      - id: "nyx_astral_scan"
+        label: "星轨法阵扫描"
+        icon: "🎯"
+        action:
+          type: "emit"
+          app_id: "internal"
+          event: "pet.tactical_scan"
+          payload: {}
+      - id: "nyx_slumber"
+        label: "深渊冥想休眠"
+        icon: "🌙"
+        action:
+          type: "emit"
+          app_id: "internal"
+          event: "pet.quick_action"
+          payload:
+            motion: "sleep"
+            expression: "sleepy"
+            text: "✦ 星盘收敛光芒，进入深渊冥想低功耗模式..."

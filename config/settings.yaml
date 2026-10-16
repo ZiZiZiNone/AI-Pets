@@ -1,0 +1,27 @@
+host:
+  ws_port_range: [9527, 9537]
+  heartbeat_timeout_sec: 45
+  default_pet: "aether_mecha_core"
+
+render:
+  idle_fps: 24
+  active_fps: 60
+  idle_timeout_ms: 5000
+  high_dpi: true
+
+behavior:
+  enable_autonomous_fsm: true
+  enable_window_climbing: true
+  enable_fullscreen_edge_peek: true
+  wander_interval_sec: 25
+  sleep_after_idle_sec: 180
+  gravity_acceleration: 1400
+  enable_health_reminders: true
+  hydration_interval_min: 45
+  posture_interval_min: 60
+
+audio:
+  enable_lip_sync: true
+  rms_smoothing: 0.75
+  rms_gain: 3.2
+  enable_tts: false

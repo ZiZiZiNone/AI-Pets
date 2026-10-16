@@ -1,0 +1,119 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 340" width="320" height="340">
+  <defs>
+    <radialGradient id="aetherCoreGrad" cx="50%" cy="45%" r="55%">
+      <stop offset="0%" stop-color="#22d3ee" />
+      <stop offset="45%" stop-color="#0284c7" />
+      <stop offset="100%" stop-color="#0f172a" />
+    </radialGradient>
+    <linearGradient id="armorMetal" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f8fafc" />
+      <stop offset="48%" stop-color="#94a3b8" />
+      <stop offset="100%" stop-color="#1e293b" />
+    </linearGradient>
+    <linearGradient id="wingNeon" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.92" />
+      <stop offset="100%" stop-color="#6366f1" stop-opacity="0.25" />
+    </linearGradient>
+    <linearGradient id="visorDark" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#090d16" />
+      <stop offset="100%" stop-color="#020617" />
+    </linearGradient>
+    <filter id="cyberGlow" x="-25%" y="-25%" width="150%" height="150%">
+      <feDropShadow dx="0" dy="0" stdDeviation="6" flood-color="#38bdf8" flood-opacity="0.65" />
+    </filter>
+    <filter id="hullShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#020617" flood-opacity="0.55" />
+    </filter>
+  </defs>
+
+  <!-- Anti-gravity ground projection ring -->
+  <g opacity="0.75">
+    <ellipse cx="160" cy="308" rx="74" ry="13" fill="none" stroke="#38bdf8" stroke-width="2" stroke-dasharray="10 6" />
+    <ellipse cx="160" cy="308" rx="46" ry="7" fill="#0ea5e9" opacity="0.28" />
+  </g>
+
+  <!-- Outer Counter-Rotating Tactical Gyroscope Ring -->
+  <g filter="url(#cyberGlow)" opacity="0.88">
+    <circle cx="160" cy="166" r="118" fill="none" stroke="#38bdf8" stroke-width="1.6" stroke-dasharray="28 14 8 14" />
+    <circle cx="160" cy="166" r="106" fill="none" stroke="#818cf8" stroke-width="1.2" stroke-dasharray="6 18" />
+    <!-- Compass degree ticks -->
+    <path d="M160 40 L160 52 M160 280 L160 292 M34 166 L46 166 M274 166 L286 166" stroke="#22d3ee" stroke-width="2.5" stroke-linecap="round" />
+  </g>
+
+  <!-- Levitating Tactical Wing Fins (Left & Right) -->
+  <g filter="url(#hullShadow)">
+    <!-- Left Wing Module -->
+    <polygon points="64,116 24,86 34,154 72,174" fill="url(#wingNeon)" stroke="#38bdf8" stroke-width="2" />
+    <polygon points="58,184 18,176 30,224 72,212" fill="url(#armorMetal)" stroke="#38bdf8" stroke-width="1.8" />
+    <!-- Right Wing Module -->
+    <polygon points="256,116 296,86 286,154 248,174" fill="url(#wingNeon)" stroke="#38bdf8" stroke-width="2" />
+    <polygon points="262,184 302,176 290,224 248,212" fill="url(#armorMetal)" stroke="#38bdf8" stroke-width="1.8" />
+  </g>
+
+  <!-- Thruster Plume Beneath Core -->
+  <g filter="url(#cyberGlow)">
+    <polygon points="142,256 160,302 178,256" fill="url(#wingNeon)" />
+    <polygon points="150,256 160,286 170,256" fill="#e0f2fe" />
+  </g>
+
+  <!-- Main Octagonal Chamfered Mecha Chassis -->
+  <g filter="url(#hullShadow)">
+    <polygon
+      points="116,74 204,74 246,118 246,214 204,258 116,258 74,214 74,118"
+      fill="url(#armorMetal)"
+      stroke="#e2e8f0"
+      stroke-width="3.5"
+    />
+    <!-- Inner armor panel bevel -->
+    <polygon
+      points="124,86 196,86 232,124 232,208 196,246 124,246 88,208 88,124"
+      fill="url(#aetherCoreGrad)"
+      stroke="#38bdf8"
+      stroke-width="2"
+    />
+  </g>
+
+  <!-- Top Tactical Sensor Horns / V-Fin Antenna -->
+  <g filter="url(#hullShadow)">
+    <polygon points="160,82 112,32 134,30 160,66 186,30 208,32" fill="#f8fafc" stroke="#38bdf8" stroke-width="2" />
+    <polygon points="160,68 150,42 160,26 170,42" fill="#f43f5e" />
+  </g>
+
+  <!-- Panoramic Hexagonal Cyber Visor -->
+  <polygon
+    points="104,122 216,122 226,156 208,192 112,192 94,156"
+    fill="url(#visorDark)"
+    stroke="#38bdf8"
+    stroke-width="2.5"
+  />
+
+  <!-- HUD Grid Lines inside Visor -->
+  <line x1="102" y1="156" x2="218" y2="156" stroke="#0ea5e9" stroke-width="1" opacity="0.35" stroke-dasharray="4 4" />
+  <line x1="160" y1="124" x2="160" y2="190" stroke="#0ea5e9" stroke-width="1" opacity="0.35" stroke-dasharray="4 4" />
+
+  <!-- Dual Luminous Mecha Optics (Eyes) -->
+  <g filter="url(#cyberGlow)">
+    <!-- Left Optic -->
+    <polygon points="116,148 144,142 148,160 120,164" fill="#22d3ee" />
+    <polygon points="124,149 138,146 140,155 126,157" fill="#ffffff" />
+    <!-- Right Optic -->
+    <polygon points="204,148 176,142 172,160 200,164" fill="#22d3ee" />
+    <polygon points="196,149 182,146 180,155 194,157" fill="#ffffff" />
+  </g>
+
+  <!-- Digital Waveform Vocalizer (Mouth Area) -->
+  <g stroke="#38bdf8" stroke-width="2.4" stroke-linecap="round">
+    <line x1="142" y1="177" x2="142" y2="181" />
+    <line x1="150" y1="174" x2="150" y2="183" />
+    <line x1="160" y1="171" x2="160" y2="185" stroke="#f43f5e" />
+    <line x1="170" y1="174" x2="170" y2="183" />
+    <line x1="178" y1="177" x2="178" y2="181" />
+  </g>
+
+  <!-- Chest Reactor Core -->
+  <g filter="url(#cyberGlow)">
+    <polygon points="160,204 180,222 160,240 140,222" fill="#020617" stroke="#38bdf8" stroke-width="2" />
+    <polygon points="160,210 173,222 160,234 147,222" fill="#22d3ee" />
+    <circle cx="160" cy="222" r="4.5" fill="#ffffff" />
+  </g>
+</svg>

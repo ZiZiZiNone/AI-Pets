@@ -1,0 +1,27 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Least-privilege capabilities for main stage, companion, and tactical HUD windows",
+  "windows": ["main", "companion", "hud"],
+  "permissions": [
+    "core:default",
+    "core:event:default",
+    "core:event:allow-emit",
+    "core:event:allow-listen",
+    "core:window:default",
+    "core:window:allow-set-ignore-cursor-events",
+    "core:window:allow-start-dragging",
+    "core:window:allow-show",
+    "core:window:allow-hide",
+    "core:window:allow-close",
+    "core:window:allow-center",
+    "core:window:allow-set-focus",
+    "core:window:allow-set-position",
+    "core:window:allow-set-size",
+    "core:window:allow-outer-position",
+    "core:window:allow-outer-size",
+    "core:window:allow-inner-size",
+    "core:window:allow-scale-factor",
+    "core:webview:default"
+  ]
+}

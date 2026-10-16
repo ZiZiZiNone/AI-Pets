@@ -1,0 +1,96 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 340" width="320" height="340">
+  <defs>
+    <radialGradient id="abyssBody" cx="50%" cy="40%" r="58%">
+      <stop offset="0%" stop-color="#311042" />
+      <stop offset="55%" stop-color="#190826" />
+      <stop offset="100%" stop-color="#09020f" />
+    </radialGradient>
+    <linearGradient id="goldAstrolabe" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fef08a" />
+      <stop offset="50%" stop-color="#eab308" />
+      <stop offset="100%" stop-color="#a16207" />
+    </linearGradient>
+    <linearGradient id="arcaneFlame" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" stop-color="#7e22ce" stop-opacity="0.1" />
+      <stop offset="50%" stop-color="#c084fc" stop-opacity="0.85" />
+      <stop offset="100%" stop-color="#fef08a" stop-opacity="0.95" />
+    </linearGradient>
+    <filter id="arcaneGlow" x="-25%" y="-25%" width="150%" height="150%">
+      <feDropShadow dx="0" dy="0" stdDeviation="7" flood-color="#c084fc" flood-opacity="0.7" />
+    </filter>
+  </defs>
+
+  <!-- Magic Circle Ground Projection -->
+  <g opacity="0.8">
+    <ellipse cx="160" cy="308" rx="76" ry="15" fill="none" stroke="url(#goldAstrolabe)" stroke-width="2" />
+    <ellipse cx="160" cy="308" rx="58" ry="10" fill="none" stroke="#c084fc" stroke-width="1.2" stroke-dasharray="8 6" />
+  </g>
+
+  <!-- Celestial Astrolabe Halo Behind Familiar -->
+  <g filter="url(#arcaneGlow)" opacity="0.9">
+    <circle cx="160" cy="148" r="108" fill="none" stroke="url(#goldAstrolabe)" stroke-width="2" />
+    <circle cx="160" cy="148" r="96" fill="none" stroke="url(#goldAstrolabe)" stroke-width="1" stroke-dasharray="14 8" />
+    <polygon points="160,34 190,148 160,262 130,148" fill="none" stroke="url(#goldAstrolabe)" stroke-width="1.2" opacity="0.55" />
+    <polygon points="46,148 160,118 274,148 160,178" fill="none" stroke="url(#goldAstrolabe)" stroke-width="1.2" opacity="0.55" />
+  </g>
+
+  <!-- Floating Arcane Crystals (Left & Right) -->
+  <g filter="url(#arcaneGlow)">
+    <polygon points="44,116 56,92 68,116 56,142" fill="url(#arcaneFlame)" stroke="url(#goldAstrolabe)" stroke-width="1.5" />
+    <polygon points="252,116 264,92 276,116 264,142" fill="url(#arcaneFlame)" stroke="url(#goldAstrolabe)" stroke-width="1.5" />
+  </g>
+
+  <!-- Shadow Tendril Tail -->
+  <path
+    d="M206 254 C258 252, 278 196, 248 166 C230 148, 250 116, 272 104"
+    fill="none"
+    stroke="#a855f7"
+    stroke-width="10"
+    stroke-linecap="round"
+    filter="url(#arcaneGlow)"
+  />
+
+  <!-- Long Lynx-Like Abyssal Ears with Gold Rings -->
+  <g>
+    <path d="M98 118 L62 32 L134 86 Z" fill="url(#abyssBody)" stroke="url(#goldAstrolabe)" stroke-width="2.5" />
+    <path d="M96 106 L74 50 L122 86 Z" fill="#a855f7" opacity="0.55" />
+    <path d="M222 118 L258 32 L186 86 Z" fill="url(#abyssBody)" stroke="url(#goldAstrolabe)" stroke-width="2.5" />
+    <path d="M224 106 L246 50 L198 86 Z" fill="#a855f7" opacity="0.55" />
+    <!-- Ear gold earring -->
+    <ellipse cx="76" cy="58" rx="9" ry="4" transform="rotate(-25 76 58)" fill="none" stroke="url(#goldAstrolabe)" stroke-width="2.5" />
+  </g>
+
+  <!-- Familiar Silhouette Body -->
+  <path
+    d="M90 184 C84 114, 114 74, 160 74 C206 74, 236 114, 230 184 C226 242, 206 286, 160 286 C114 286, 94 242, 90 184 Z"
+    fill="url(#abyssBody)"
+    stroke="url(#goldAstrolabe)"
+    stroke-width="2.8"
+    filter="url(#arcaneGlow)"
+  />
+
+  <!-- Forehead Third-Eye Star Seal -->
+  <polygon points="160,94 166,108 180,110 168,118 172,132 160,124 148,132 152,118 140,110 154,108" fill="url(#goldAstrolabe)" />
+
+  <!-- Heterochromatic Luminous Eyes (Left Gold, Right Violet-Cyan) -->
+  <g filter="url(#arcaneGlow)">
+    <!-- Left Eye (Solar Gold) -->
+    <path d="M110 148 Q128 132 146 148 Q128 164 110 148 Z" fill="#facc15" />
+    <ellipse cx="128" cy="148" rx="3.5" ry="11" fill="#09020f" />
+    <circle cx="124" cy="143" r="3" fill="#ffffff" />
+
+    <!-- Right Eye (Astral Cyan-Violet) -->
+    <path d="M174 148 Q192 132 210 148 Q192 164 174 148 Z" fill="#38bdf8" />
+    <ellipse cx="192" cy="148" rx="3.5" ry="11" fill="#09020f" />
+    <circle cx="188" cy="143" r="3" fill="#ffffff" />
+  </g>
+
+  <!-- Arcane Fang Smile -->
+  <path d="M146 172 Q153 178 160 172 Q167 178 174 172" fill="none" stroke="#e9d5ff" stroke-width="2.5" stroke-linecap="round" />
+  <polygon points="149,174 152,181 155,174" fill="#ffffff" />
+  <polygon points="165,174 168,181 171,174" fill="#ffffff" />
+
+  <!-- Golden Astral Collar & Chest Pendant -->
+  <path d="M112 204 Q160 224 208 204" fill="none" stroke="url(#goldAstrolabe)" stroke-width="4" stroke-linecap="round" />
+  <polygon points="160,214 172,232 160,250 148,232" fill="#c084fc" stroke="url(#goldAstrolabe)" stroke-width="2" />
+</svg>

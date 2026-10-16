@@ -1,0 +1,7 @@
+node_modules/
+dist/
+src-tauri/target/
+src-tauri/gen/
+.pet_ws_token
+*.log
+.DS_Store

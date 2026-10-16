@@ -1,0 +1,123 @@
+id: "demo_sprite_pet"
+name: "星奈 (Nova Sprite)"
+version: "2.0.0"
+type: "sprite"
+description: "开箱即用的高帧率矢量动态测试宠物，内置呼吸缩放、眨眼、开心跳跃与触摸区域配置"
+
+model:
+  entry: "idle.svg"
+  scale: 1.0
+  offset:
+    x: 0
+    y: 0
+  fps: 60
+  animations:
+    idle:
+      file: "idle.svg"
+      loop: true
+    happy:
+      file: "idle.svg"
+      loop: false
+      duration_ms: 2200
+    pat:
+      file: "idle.svg"
+      loop: false
+      duration_ms: 1800
+    feed:
+      file: "idle.svg"
+      loop: false
+      duration_ms: 2400
+    drag:
+      file: "idle.svg"
+      loop: true
+    climb:
+      file: "idle.svg"
+      loop: true
+    sleep:
+      file: "idle.svg"
+      loop: true
+
+expressions:
+  neutral:
+    tint: 0xffffff
+  smile:
+    tint: 0xfff7e6
+  surprised:
+    tint: 0xe6f7ff
+  sleepy:
+    tint: 0xd9e2ec
+
+hit_areas:
+  - name: "head"
+    label: "摸摸头"
+    rect:
+      x: 85
+      y: 45
+      w: 150
+      h: 110
+    motion: "pat"
+    expression: "smile"
+    texts:
+      - "哼哼~ 摸头会变聪明的！"
+      - "头顶天线信号满格啦 ✨"
+      - "再摸一下就帮你消掉今天所有的 Bug！"
+  - name: "body"
+    label: "戳一戳"
+    rect:
+      x: 95
+      y: 155
+      w: 130
+      h: 135
+    motion: "happy"
+    expression: "surprised"
+    texts:
+      - "哇！有什么新任务交给我吗？"
+      - "右键或者点击菜单按钮可以召唤扇形控制台哦~"
+      - "把文件拖到我身上可以触发投喂网关！"
+
+drop_handlers:
+  - extensions: [".py", ".rs", ".ts", ".js", ".vue", ".json", ".yaml", ".yml", ".md", ".txt"]
+    motion: "feed"
+    expression: "smile"
+    bubble_template: "收到投喂的代码/文档：{filename}，正在为你分析行数与摘要..."
+    action:
+      type: "exec"
+      command: "python"
+      args: ["-c", "import sys, os; p=sys.argv[1]; sz=os.path.getsize(p); lines=sum(1 for _ in open(p, 'rb')); print(f'已消化 [{os.path.basename(p)}]：{lines} 行 / {sz} 字节 ✨')"]
+  - extensions: ["*"]
+    motion: "feed"
+    expression: "surprised"
+    bubble_template: "吞下了神秘文件：{filename}！"
+    action:
+      type: "emit"
+      app_id: "broadcast"
+      event: "pet.file_dropped"
+      payload: {}
+
+menus:
+  - id: "pet_exclusive"
+    label: "星奈专属"
+    icon: "🌟"
+    children:
+      - id: "nova_dance"
+        label: "元气跳跃"
+        icon: "🎵"
+        action:
+          type: "emit"
+          app_id: "internal"
+          event: "pet.quick_action"
+          payload:
+            motion: "happy"
+            expression: "smile"
+            text: "啦啦啦~ 元气满满的一天开始啦！"
+      - id: "nova_sleep"
+        label: "小憩模式"
+        icon: "💤"
+        action:
+          type: "emit"
+          app_id: "internal"
+          event: "pet.quick_action"
+          payload:
+            motion: "sleep"
+            expression: "sleepy"
+            text: "呼嚕... 呼嚕... 有事随时叫醒我..."

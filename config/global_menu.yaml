@@ -1,0 +1,133 @@
+# 全局自定义菜单配置 (支持热更新)
+menus:
+  - id: "sys_interact"
+    label: "互动养成"
+    icon: "✨"
+    children:
+      - id: "act_greet"
+        label: "打招呼"
+        icon: "👋"
+        action:
+          type: "emit"
+          app_id: "internal"
+          event: "pet.quick_action"
+          payload:
+            motion: "happy"
+            expression: "smile"
+            text: "嗨！今天写代码状态怎么样？随时叫我哦~"
+      - id: "act_feed_energy"
+        label: "投喂数据糖果"
+        icon: "🍬"
+        badge: "+20⚡"
+        action:
+          type: "emit"
+          app_id: "internal"
+          event: "pet.feed_care"
+          payload:
+            item: "全息数据糖果"
+            energy: 20
+            affinity: 8
+            xp: 25
+      - id: "act_climb_toggle"
+        label: "切换窗口攀爬"
+        icon: "🧗"
+        action:
+          type: "emit"
+          app_id: "internal"
+          event: "pet.toggle_climb"
+          payload: {}
+      - id: "act_edge_peek"
+        label: "贴边探头测试"
+        icon: "👀"
+        action:
+          type: "emit"
+          app_id: "internal"
+          event: "pet.edge_peek"
+          payload: {}
+
+  - id: "sys_focus"
+    label: "番茄专注"
+    icon: "🍅"
+    children:
+      - id: "focus_start_25"
+        label: "开启25m专注"
+        icon: "🔥"
+        badge: "25M"
+        action:
+          type: "emit"
+          app_id: "internal"
+          event: "pomodoro.start"
+          payload:
+            minutes: 25
+            mode: "focus"
+            label: "深度代码冲刺"
+      - id: "focus_break_5"
+        label: "5m护眼小憩"
+        icon: "🍵"
+        action:
+          type: "emit"
+          app_id: "internal"
+          event: "pomodoro.start"
+          payload:
+            minutes: 5
+            mode: "short_break"
+            label: "远眺护眼与补水"
+      - id: "focus_stop"
+        label: "重置番茄钟"
+        icon: "⏹️"
+        action:
+          type: "emit"
+          app_id: "internal"
+          event: "pomodoro.stop"
+          payload: {}
+      - id: "act_fortune"
+        label: "今日开发运势"
+        icon: "🔮"
+        action:
+          type: "emit"
+          app_id: "internal"
+          event: "pet.fortune_divination"
+          payload: {}
+
+  - id: "sys_tools"
+    label: "快捷工具"
+    icon: "🛠️"
+    children:
+      - id: "tool_companion_demo"
+        label: "打开控制面板"
+        icon: "🎛️"
+        action:
+          type: "panel"
+          mode: "schema"
+          title: "桌面宠物宿主控制中心"
+      - id: "tool_quick_chat"
+        label: "内联指令对话"
+        icon: "💬"
+        action:
+          type: "emit"
+          app_id: "internal"
+          event: "chat.toggle"
+          payload: {}
+      - id: "tool_sysinfo"
+        label: "系统状态巡检"
+        icon: "💻"
+        action:
+          type: "emit"
+          app_id: "internal"
+          event: "pet.system_inspect"
+          payload: {}
+      - id: "tool_open_project"
+        label: "打开配置目录"
+        icon: "📂"
+        action:
+          type: "open"
+          target: "./config"
+
+  - id: "sys_studio"
+    label: "微调工坊"
+    icon: "🎨"
+    action:
+      type: "emit"
+      app_id: "internal"
+      event: "studio.toggle"
+      payload: {}
