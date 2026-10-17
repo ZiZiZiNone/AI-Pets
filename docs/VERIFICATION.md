@@ -1,6 +1,6 @@
 # Verification report
 
-Generated 2026-10-17 00:34:57 by `npm run verify`. Every number below is captured from a real run of
+Generated 2026-10-17 00:40:51 by `npm run verify`. Every number below is captured from a real run of
 the command shown beside it — regenerate with `npm run verify` to reproduce.
 
 ## 1. PE forensics — release binary
@@ -75,30 +75,23 @@ gzip streams in image: **39** — asset bodies are stored compressed, so file co
 
 ## 2. Working tree vs HEAD
 
-tracked files modified: **8** · untracked paths: **1** · **474** insertions / **108** deletions
+tracked files modified: **0** · untracked paths: **0** · **0** insertions / **0** deletions
 
 Untracked additions:
 
-- `.github/`
+
 
 Per-file diffstat:
 
 | file | + | - |
 | --- | --- | --- |
-| `README.md` | 15 | 1 |
-| `docs/VERIFICATION.md` | 40 | 88 |
-| `package.json` | 1 | 0 |
-| `scripts/verify.mjs` | 80 | 2 |
-| `src-tauri/src/action_executor.rs` | 146 | 0 |
-| `src-tauri/src/main.rs` | 1 | 1 |
-| `src-tauri/src/win32_window.rs` | 82 | 10 |
-| `src-tauri/src/ws_server.rs` | 109 | 6 |
+
 
 HEAD-vs-working line counts:
 
 | file | HEAD lines | working lines | |
 | --- | --- | --- | --- |
-| `package.json` | 42 | 44 | changed |
+| `package.json` | 43 | 44 | changed |
 | `src-tauri/Cargo.toml` | 32 | 33 | changed |
 | `src-tauri/tauri.conf.json` | 87 | 88 | changed |
 | `.gitignore` | 8 | 9 | changed |
@@ -153,24 +146,24 @@ exit code: **0** (0 = no dead exports, 1 = findings present)
 Rust unit tests: **21 passed, 0 failed**.
 
 ```
-test action_executor::tests::unit_variants_execute ... ok
 test action_executor::tests::pomodoro_falls_back_to_twenty_five_minutes ... ok
-test action_executor::tests::unknown_action_type_is_dispatched_not_executed ... ok
+test action_executor::tests::unit_variants_execute ... ok
 test action_executor::tests::emotion_outside_the_whitelist_is_rejected ... ok
-test action_executor::tests::known_pets_are_accepted ... ok
-test action_executor::tests::unknown_action_id_does_not_deserialize ... ok
-test action_executor::tests::allowed_emotions_are_accepted ... ok
-test win32_window::tests::disabling_clears_the_whole_mask_in_one_step ... ok
 test action_executor::tests::unknown_pet_is_rejected ... ok
+test action_executor::tests::allowed_emotions_are_accepted ... ok
+test action_executor::tests::unknown_action_id_does_not_deserialize ... ok
+test action_executor::tests::unknown_action_type_is_dispatched_not_executed ... ok
+test action_executor::tests::known_pets_are_accepted ... ok
+test win32_window::tests::disabling_clears_the_whole_mask_in_one_step ... ok
+test win32_window::tests::disabling_leaves_unrelated_style_bits_intact ... ok
 test win32_window::tests::disabling_removes_mask_bits_the_original_had ... ok
 test win32_window::tests::enabling_is_idempotent ... ok
-test win32_window::tests::disabling_leaves_unrelated_style_bits_intact ... ok
 test win32_window::tests::enabling_sets_every_bit_in_the_mask ... ok
 test win32_window::tests::round_trip_returns_the_original_style ... ok
 test ws_server::tests::token_does_not_leak_the_process_id ... ok
+test ws_server::tests::authorize_accepts_only_the_exact_token ... ok
 test ws_server::tests::consecutive_tokens_differ ... ok
 test ws_server::tests::token_has_the_documented_shape ... ok
-test ws_server::tests::authorize_accepts_only_the_exact_token ... ok
 test ws_server::tests::authorize_rejects_missing_wrong_and_near_miss_tokens ... ok
 test ws_server::tests::tokens_from_two_brokers_are_not_interchangeable ... ok
 test ws_server::tests::token_is_written_to_the_supplied_path ... ok
@@ -184,11 +177,4 @@ additionally read line-by-line; the substantive hunks are summarised after it.
 
 | file | + | - |
 | --- | --- | --- |
-| `README.md` | 15 | 1 |
-| `docs/VERIFICATION.md` | 40 | 88 |
-| `package.json` | 1 | 0 |
-| `scripts/verify.mjs` | 80 | 2 |
-| `src-tauri/src/action_executor.rs` | 146 | 0 |
-| `src-tauri/src/main.rs` | 1 | 1 |
-| `src-tauri/src/win32_window.rs` | 82 | 10 |
-| `src-tauri/src/ws_server.rs` | 109 | 6 |
+
