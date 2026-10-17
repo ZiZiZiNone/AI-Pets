@@ -9,6 +9,17 @@
 一只宠物就是 `pets/` 下的一个文件夹（`pet.yaml` + 资源），配色、感应区、台词、菜单、拖拽响应全部写在清单里，
 **不需要改任何源码**，保存即热重载。
 
+**想换语音方案或大模型？** 语音三档（系统 Web Speech / OpenAI 兼容接口 / 本地命令行引擎）
+与三种 LLM 协议（OpenAI 兼容 / Anthropic / Ollama）全部由 `config/settings.yaml` 驱动，
+每只宠物还能用自己的 `voice:` 与 `persona:` 覆盖宿主默认值——同样**不需要改源码**。
+想完全离线，仓库带了一个把引擎与中文模型一次装好的脚本：
+
+```bash
+python scripts/fetch_local_voice_engine.py --dest E:/AI/sherpa-onnx
+```
+
+它会顺带跑一次「合成 → 识别」闭环自检，并把填好绝对路径的配置片段打印出来。
+
 ## 直接下载安装包（推荐）
 
 不想在本机安装 Rust 与 MSVC 工具链，就用 GitHub Actions 构建好的安装包：
@@ -114,6 +125,12 @@ AI-Pets/
 │   ├── companion/                # 伴生控制台窗口（突触舱、专注待办、网页与 LLM 脑桥）
 │   ├── hud/                      # 全屏物理鼠标穿透标注层窗口
 │   ├── utils/                    # YAML、指令引擎、舞台运行时、Web Audio 口型、存储
+│   │   ├── engineBridge.ts       # 调 Rust 的通用外部引擎执行器（argv 模板、base64 编解码）
+│   │   ├── voiceEngine.ts        # 合成/识别三条通路的统一出口
+│   │   ├── voiceProviders.ts     # 语音方式的元数据与「未就绪」原因
+│   │   ├── audioCapture.ts       # 麦克风录音成 16kHz 单声道 wav、失败原因中文化
+│   │   ├── llmProviders.ts       # 三种 LLM 协议的请求体与响应解析
+│   │   └── petPersona.ts         # 由 pet.yaml 的 persona 组装系统提示词
 │   └── types/                    # TypeScript 类型声明
 ├── src-tauri/
 │   ├── capabilities/
@@ -121,12 +138,14 @@ AI-Pets/
 │       ├── main.rs               # Tauri 入口、IPC 指令集、系统托盘与配置监听
 │       ├── win32_window.rs       # 无焦点拦截、30Hz 穿透轮询、窗口吸附与贴边探头
 │       ├── ws_server.rs          # 本地 WebSocket 总线（令牌鉴权、心跳、热插拔）
+│       ├── engine_runner.rs      # 通用外部引擎执行器（argv 模板、超时、有界排空）
 │       └── action_executor.rs    # 白名单动作与外部命令执行器
 ├── tests/                        # Vitest 单元测试
 ├── scripts/
 │   ├── dead-code-scan.mjs        # 死导出扫描（已接入 npm run build）
 │   ├── cycle-scan.mjs            # 导入环检测（已接入 npm run build）
-│   └── verify.mjs                # 发布前取证（生成 docs/VERIFICATION.md）
+│   ├── verify.mjs                # 发布前取证（生成 docs/VERIFICATION.md）
+│   └── fetch_local_voice_engine.py  # 下载本地 TTS/STT 引擎与模型并跑闭环自检
 ├── docs/
 │   ├── 宠物接入指南.md            # 如何新增/替换自己的宠物（不需要改源码）
 │   ├── 使用说明书.md              # 面向使用者的完整说明
@@ -211,6 +230,8 @@ src-tauri/target/release/bundle/
 - **WebSocket 总线全量鉴权**：每条入站消息（含热插拔方法）都必须携带进程令牌，令牌由操作系统随机源派生；握手另按解析后的主机名校验 `Origin`。
 - **状态锁不跨越窗口层**：状态锁只在变更与取快照期间持有，`emit` 与 Win32 窗口调用一律在锁外，避免与运行托盘处理器的事件循环互相等待。
 - **窗口只隐藏不销毁**：三个窗口都是可反复显隐的表面，关闭请求被转成隐藏。窗口按 label 查找，销毁后再也找不到，会让桌宠或面板在整个会话内不可恢复；退出由托盘菜单调用 `AppHandle::exit` 完成，不经过关闭事件。
+- **外部引擎不经 shell**：`engine_runner` 按 argv 数组直接起进程，占位符由宿主填成自己管理的临时文件路径，`*` 只按名序取第一个匹配文件，命令行元字符不会被解释；超时走进程树终止，管道排空有上界，不会因为孙进程握着管道而挂住。
+- **宠物 id 只校验形状**：`switch_pet` 从硬编码白名单改成「非空、≤64 字符、只含字母数字与 `_` `-`」，所以丢进 `pets/` 的新宠物不需要改 Rust 就能被外部程序切到，同时仍然拒绝分隔符、`.`、`..` 与控制字符。
 
 ## 外部热插拔联调
 
