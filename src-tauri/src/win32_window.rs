@@ -60,6 +60,20 @@ pub fn apply_window_click_through(
         .map_err(|e| format!("Failed to set ignore_cursor_events: {}", e))
 }
 
+/// Toggle a group of extended-style bits as one unit.
+///
+/// The no-activate and tool-window bits must move together: leaving
+/// `WS_EX_TOOLWINDOW` set hides the window from the taskbar and Alt+Tab permanently,
+/// even once it is focusable again. Callers pass the combined mask so this rule stays
+/// testable without a live `HWND`.
+fn apply_style_mask(current: isize, mask: isize, enable: bool) -> isize {
+    if enable {
+        current | mask
+    } else {
+        current & !mask
+    }
+}
+
 pub fn apply_no_activate_style(window: &WebviewWindow, no_activate: bool) {
     #[cfg(target_os = "windows")]
     {
@@ -67,18 +81,12 @@ pub fn apply_no_activate_style(window: &WebviewWindow, no_activate: bool) {
         use windows::Win32::UI::WindowsAndMessaging::{
             GetWindowLongPtrW, SetWindowLongPtrW, GWL_EXSTYLE, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
         };
+        let mask = (WS_EX_NOACTIVATE.0 as isize) | (WS_EX_TOOLWINDOW.0 as isize);
         if let Ok(raw_hwnd) = window.hwnd() {
             let hwnd = HWND(raw_hwnd.0);
             unsafe {
                 let current = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
-                // Both flags must be cleared together. Leaving WS_EX_TOOLWINDOW set
-                // permanently hid the companion from the taskbar and Alt+Tab after its
-                // first blur, even once it was focusable again.
-                let next = if no_activate {
-                    current | (WS_EX_NOACTIVATE.0 as isize) | (WS_EX_TOOLWINDOW.0 as isize)
-                } else {
-                    current & !((WS_EX_NOACTIVATE.0 as isize) | (WS_EX_TOOLWINDOW.0 as isize))
-                };
+                let next = apply_style_mask(current, mask, no_activate);
                 let _ = SetWindowLongPtrW(hwnd, GWL_EXSTYLE, next);
             }
         }
@@ -343,16 +351,80 @@ pub fn start_cursor_and_window_poller(app: AppHandle) {
             if let Some((cx, cy)) = query_os_cursor_pos() {
                 if let Some(main_win) = app.get_webview_window("main") {
                     let pt = check_cursor_in_window_bounds(&main_win, cx, cy);
-                    if pt.in_window_bounds || tick_count % 5 == 0 {
+                    if pt.in_window_bounds || tick_count.is_multiple_of(5) {
                         let _ = app.emit("cursor-in-window", &pt);
                     }
                 }
             }
 
-            if tick_count % 45 == 0 {
+            if tick_count.is_multiple_of(45) {
                 let win_state = query_foreground_window_state();
                 let _ = app.emit("desktop-window-state", &win_state);
             }
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::apply_style_mask;
+
+    // WS_EX_NOACTIVATE (0x08) | WS_EX_TOOLWINDOW (0x80).
+    const PAIR: isize = 0x88;
+    const WS_EX_LAYERED: isize = 0x0004_0000; // unrelated bit, must survive untouched
+
+    #[test]
+    fn enabling_sets_every_bit_in_the_mask() {
+        assert_eq!(apply_style_mask(0, PAIR, true), PAIR);
+        assert_eq!(
+            apply_style_mask(WS_EX_LAYERED, PAIR, true),
+            WS_EX_LAYERED | PAIR
+        );
+    }
+
+    #[test]
+    fn enabling_is_idempotent() {
+        let once = apply_style_mask(WS_EX_LAYERED, PAIR, true);
+        assert_eq!(apply_style_mask(once, PAIR, true), once);
+    }
+
+    #[test]
+    fn disabling_clears_the_whole_mask_in_one_step() {
+        // Regression: clearing only WS_EX_NOACTIVATE left WS_EX_TOOLWINDOW set, which
+        // kept the companion invisible to the taskbar and Alt+Tab after its first blur.
+        let enabled = apply_style_mask(WS_EX_LAYERED, PAIR, true);
+        assert_eq!(apply_style_mask(enabled, PAIR, false), WS_EX_LAYERED);
+    }
+
+    #[test]
+    fn disabling_leaves_unrelated_style_bits_intact() {
+        let other = 0x0008_0000 | 0x0000_0080 | 0x0000_0008;
+        let cleared = apply_style_mask(other, PAIR, false);
+        assert_eq!(cleared, other & !PAIR);
+        assert_ne!(cleared, 0, "unrelated bits must survive the clear");
+    }
+
+    #[test]
+    fn round_trip_returns_the_original_style() {
+        // Only values with the mask already clear can round-trip: disabling is defined
+        // to clear those bits, so an original that had them set legitimately loses them.
+        for original in [
+            0isize,
+            WS_EX_LAYERED,
+            0x0008_0000,
+            0x0002_0000 | 0x0001_0000,
+            isize::MAX & !PAIR,
+        ] {
+            assert_eq!(original & PAIR, 0, "fixture must not contain mask bits");
+            let round_tripped =
+                apply_style_mask(apply_style_mask(original, PAIR, true), PAIR, false);
+            assert_eq!(round_tripped, original);
+        }
+    }
+
+    #[test]
+    fn disabling_removes_mask_bits_the_original_had() {
+        assert_eq!(apply_style_mask(PAIR, PAIR, true), PAIR);
+        assert_eq!(apply_style_mask(PAIR, PAIR, false), 0);
+    }
 }

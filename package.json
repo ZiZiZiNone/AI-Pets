@@ -9,6 +9,7 @@
     "typecheck": "vue-tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml --features custom-protocol",
     "scan:dead": "node scripts/dead-code-scan.mjs",
     "verify": "node scripts/verify.mjs",
     "build": "npm run typecheck && npm run scan:dead && vite build",

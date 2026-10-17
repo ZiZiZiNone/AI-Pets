@@ -14,7 +14,7 @@
  * Everything reported here is captured from a real run; nothing is asserted by hand.
  */
 
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -311,12 +311,62 @@ function deadScan() {
   };
 }
 
+/* ------------------------------------------------------ 5. Rust gates */
+
+function rustGates() {
+  const probe = spawnSync('cargo', ['--version'], { encoding: 'utf8', shell: true });
+  if (probe.error || probe.status !== 0) {
+    const reason = probe.error ? probe.error.code || probe.error.message : `exit ${probe.status}`;
+    return {
+      available: false,
+      reason: `cargo is not runnable here (${reason}). Install Rust, or put cargo on PATH, then re-run.`,
+      allOk: false,
+    };
+  }
+
+  const run = (args) => {
+    const res = spawnSync('cargo', args, { encoding: 'utf8', shell: true });
+    return {
+      exitCode: res.status ?? 1,
+      output: `${res.stdout ?? ''}${res.stderr ?? ''}`.trim(),
+    };
+  };
+
+  const manifest = ['--manifest-path', 'src-tauri/Cargo.toml'];
+  const fmt = run(['fmt', ...manifest, '--check']);
+  const clippy = run([
+    'clippy',
+    ...manifest,
+    '--all-targets',
+    '--features',
+    'custom-protocol',
+    '--',
+    '-D',
+    'warnings',
+  ]);
+  const test = run(['test', ...manifest, '--features', 'custom-protocol']);
+
+  const passed = /test result: ok\. (\d+) passed/.exec(test.output);
+  const failed = /(\d+) failed/.exec(test.output);
+
+  return {
+    available: true,
+    allOk: fmt.exitCode === 0 && clippy.exitCode === 0 && test.exitCode === 0,
+    fmt,
+    clippy,
+    test,
+    passed: passed ? Number(passed[1]) : null,
+    failed: failed ? Number(failed[1]) : null,
+  };
+}
+
 /* --------------------------------------------------------------- report */
 
 const pe = peForensics();
 const gc = gitComparison();
 const tc = typecheck();
 const ds = deadScan();
+const rust = rustGates();
 
 push(
   '1. PE forensics — release binary',
@@ -354,7 +404,31 @@ push(
 push('4. Static dead-export scan', ds.body);
 
 push(
-  '5. Per-file diff',
+  '5. Rust gates',
+  rust.available
+    ? [
+        '| gate | command | exit code |',
+        '| --- | --- | --- |',
+        `| formatting | \`cargo fmt --check\` | ${rust.fmt.exitCode} |`,
+        `| clippy | \`cargo clippy --all-targets --features custom-protocol -- -D warnings\` | ${rust.clippy.exitCode} |`,
+        `| unit tests | \`cargo test --features custom-protocol\` | ${rust.test.exitCode} |`,
+        '',
+        rust.passed !== null
+          ? `Rust unit tests: **${rust.passed} passed, ${rust.failed ?? 0} failed**.`
+          : 'Rust unit test summary not found in output.',
+        '',
+        '```',
+        rust.test.output
+          .split('\n')
+          .filter((l) => l.startsWith('test ') || l.includes('test result'))
+          .join('\n'),
+        '```',
+      ].join('\n')
+    : `> **Skipped** — ${rust.reason}`
+);
+
+push(
+  '6. Per-file diff',
   [
     'The table below is the authoritative list of what changed against `HEAD`. Each entry was',
     'additionally read line-by-line; the substantive hunks are summarised after it.',
@@ -380,6 +454,10 @@ const failures = [
   ['git comparison', true],
   ['typecheck', tc.exitCode === 0],
   ['dead-export scan', ds.exitCode === 0],
+  ['rust toolchain available', rust.available],
+  ['rust fmt', rust.available && rust.fmt.exitCode === 0],
+  ['rust clippy', rust.available && rust.clippy.exitCode === 0],
+  ['rust tests', rust.available && rust.test.exitCode === 0],
 ].filter(([, ok]) => !ok);
 
 console.log(body);

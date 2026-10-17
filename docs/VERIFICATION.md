@@ -1,6 +1,6 @@
 # Verification report
 
-Generated 2026-10-17 00:02:37 by `npm run verify`. Every number below is captured from a real run of
+Generated 2026-10-17 00:34:57 by `npm run verify`. Every number below is captured from a real run of
 the command shown beside it — regenerate with `npm run verify` to reproduce.
 
 ## 1. PE forensics — release binary
@@ -11,7 +11,7 @@ path as a literal byte sequence inside the image.
 
 | field | value |
 | --- | --- |
-| size on disk | 24,612,864 bytes (23.47 MiB) |
+| size on disk | 24,610,304 bytes (23.47 MiB) |
 | DOS signature | `MZ` |
 | PE signature | `50 45 00 00` |
 | machine | `0x8664` (x86-64) |
@@ -22,7 +22,7 @@ path as a literal byte sequence inside the image.
 | DEP (NX_COMPAT) | yes |
 | HIGH_ENTROPY_VA | yes |
 | sections | `.text` `.rdata` `.data` `.pdata` `.rsrc` `.reloc` |
-| import directory | RVA `0xD6C858`, 34 DLL entries |
+| import directory | RVA `0xD6B898`, 34 DLL entries |
 
 Import table detail:
 
@@ -67,76 +67,41 @@ total imported symbols: **449**
 
 Embedded assets:
 
-dist files: **28** · present in binary as literal asset path: **24** · missing: **4**
+dist files: **28** · present in binary as literal asset path: **28** · missing: **0**
 
-- MISSING `assets/HTMLText-BMDvDYrl.js`
-- MISSING `assets/Live2dAdapter-DkZAzdQk.js`
-- MISSING `assets/main-CWJi-K2g.js`
-- MISSING `assets/SpineAdapter-DEdhecn8.js`
+- every dist asset path is embedded in the executable
 
-gzip streams in image: **42** — asset bodies are stored compressed, so file contents are not greppable as plaintext; the path table above is the reliable indicator.
+gzip streams in image: **39** — asset bodies are stored compressed, so file contents are not greppable as plaintext; the path table above is the reliable indicator.
 
 ## 2. Working tree vs HEAD
 
-tracked files modified: **33** · untracked paths: **8** · **2741** insertions / **1784** deletions
+tracked files modified: **8** · untracked paths: **1** · **474** insertions / **108** deletions
 
 Untracked additions:
 
-- `docs/`
-- `package-lock.json`
-- `scripts/`
-- `src-tauri/Cargo.lock`
-- `src/constants/`
-- `src/store/carePresenter.ts`
-- `src/utils/storage.ts`
-- `tests/`
+- `.github/`
 
 Per-file diffstat:
 
 | file | + | - |
 | --- | --- | --- |
-| `.gitignore` | 1 | 0 |
-| `README.md` | 85 | 16 |
-| `package.json` | 9 | 2 |
-| `src-tauri/Cargo.toml` | 7 | 0 |
-| `src-tauri/src/action_executor.rs` | 10 | 2 |
-| `src-tauri/src/main.rs` | 54 | 15 |
-| `src-tauri/src/win32_window.rs` | 11 | 9 |
-| `src-tauri/src/ws_server.rs` | 94 | 69 |
-| `src-tauri/tauri.conf.json` | 1 | 1 |
-| `src/App.vue` | 179 | 134 |
-| `src/adapters/Live2dAdapter.ts` | 1 | 1 |
-| `src/adapters/SpineAdapter.ts` | 51 | 18 |
-| `src/adapters/SpriteAdapter.ts` | 62 | 25 |
-| `src/companion/CompanionApp.vue` | 37 | 6 |
-| `src/companion/FocusTodoTab.vue` | 13 | 6 |
-| `src/companion/PodsTab.vue` | 73 | 51 |
-| `src/companion/WebMatrixTab.vue` | 33 | 13 |
-| `src/companion/companion.ts` | 45 | 28 |
-| `src/components/PetCanvasStage.vue` | 122 | 96 |
-| `src/components/RadialMenu.vue` | 36 | 24 |
-| `src/components/SpeechBubble.vue` | 13 | 2 |
-| `src/components/StageHudDock.vue` | 0 | 1 |
-| `src/components/StudioOverlay.vue` | 57 | 18 |
-| `src/hud/HudApp.vue` | 43 | 33 |
-| `src/store/careStore.ts` | 427 | 342 |
-| `src/store/petStore.ts` | 611 | 474 |
-| `src/types/pet.d.ts` | 18 | 5 |
-| `src/utils/audioLipSync.ts` | 26 | 9 |
-| `src/utils/commandEngine.ts` | 231 | 164 |
-| `src/utils/stageRuntime.ts` | 267 | 198 |
-| `src/utils/yamlLoader.ts` | 4 | 2 |
-| `test_external_app.py` | 89 | 7 |
-| `vite.config.ts` | 31 | 13 |
+| `README.md` | 15 | 1 |
+| `docs/VERIFICATION.md` | 40 | 88 |
+| `package.json` | 1 | 0 |
+| `scripts/verify.mjs` | 80 | 2 |
+| `src-tauri/src/action_executor.rs` | 146 | 0 |
+| `src-tauri/src/main.rs` | 1 | 1 |
+| `src-tauri/src/win32_window.rs` | 82 | 10 |
+| `src-tauri/src/ws_server.rs` | 109 | 6 |
 
 HEAD-vs-working line counts:
 
 | file | HEAD lines | working lines | |
 | --- | --- | --- | --- |
-| `package.json` | 35 | 43 | changed |
-| `src-tauri/Cargo.toml` | 25 | 33 | changed |
+| `package.json` | 42 | 44 | changed |
+| `src-tauri/Cargo.toml` | 32 | 33 | changed |
 | `src-tauri/tauri.conf.json` | 87 | 88 | changed |
-| `.gitignore` | 7 | 9 | changed |
+| `.gitignore` | 8 | 9 | changed |
 
 ## 3. Typecheck and artifact residue
 
@@ -177,43 +142,53 @@ EXPORTED BUT ONLY USED IN ITS OWN FILE:  (none)
 
 exit code: **0** (0 = no dead exports, 1 = findings present)
 
-## 5. Per-file diff
+## 5. Rust gates
+
+| gate | command | exit code |
+| --- | --- | --- |
+| formatting | `cargo fmt --check` | 0 |
+| clippy | `cargo clippy --all-targets --features custom-protocol -- -D warnings` | 0 |
+| unit tests | `cargo test --features custom-protocol` | 0 |
+
+Rust unit tests: **21 passed, 0 failed**.
+
+```
+test action_executor::tests::unit_variants_execute ... ok
+test action_executor::tests::pomodoro_falls_back_to_twenty_five_minutes ... ok
+test action_executor::tests::unknown_action_type_is_dispatched_not_executed ... ok
+test action_executor::tests::emotion_outside_the_whitelist_is_rejected ... ok
+test action_executor::tests::known_pets_are_accepted ... ok
+test action_executor::tests::unknown_action_id_does_not_deserialize ... ok
+test action_executor::tests::allowed_emotions_are_accepted ... ok
+test win32_window::tests::disabling_clears_the_whole_mask_in_one_step ... ok
+test action_executor::tests::unknown_pet_is_rejected ... ok
+test win32_window::tests::disabling_removes_mask_bits_the_original_had ... ok
+test win32_window::tests::enabling_is_idempotent ... ok
+test win32_window::tests::disabling_leaves_unrelated_style_bits_intact ... ok
+test win32_window::tests::enabling_sets_every_bit_in_the_mask ... ok
+test win32_window::tests::round_trip_returns_the_original_style ... ok
+test ws_server::tests::token_does_not_leak_the_process_id ... ok
+test ws_server::tests::consecutive_tokens_differ ... ok
+test ws_server::tests::token_has_the_documented_shape ... ok
+test ws_server::tests::authorize_accepts_only_the_exact_token ... ok
+test ws_server::tests::authorize_rejects_missing_wrong_and_near_miss_tokens ... ok
+test ws_server::tests::tokens_from_two_brokers_are_not_interchangeable ... ok
+test ws_server::tests::token_is_written_to_the_supplied_path ... ok
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+```
+
+## 6. Per-file diff
 
 The table below is the authoritative list of what changed against `HEAD`. Each entry was
 additionally read line-by-line; the substantive hunks are summarised after it.
 
 | file | + | - |
 | --- | --- | --- |
-| `.gitignore` | 1 | 0 |
-| `README.md` | 85 | 16 |
-| `package.json` | 9 | 2 |
-| `src-tauri/Cargo.toml` | 7 | 0 |
-| `src-tauri/src/action_executor.rs` | 10 | 2 |
-| `src-tauri/src/main.rs` | 54 | 15 |
-| `src-tauri/src/win32_window.rs` | 11 | 9 |
-| `src-tauri/src/ws_server.rs` | 94 | 69 |
-| `src-tauri/tauri.conf.json` | 1 | 1 |
-| `src/App.vue` | 179 | 134 |
-| `src/adapters/Live2dAdapter.ts` | 1 | 1 |
-| `src/adapters/SpineAdapter.ts` | 51 | 18 |
-| `src/adapters/SpriteAdapter.ts` | 62 | 25 |
-| `src/companion/CompanionApp.vue` | 37 | 6 |
-| `src/companion/FocusTodoTab.vue` | 13 | 6 |
-| `src/companion/PodsTab.vue` | 73 | 51 |
-| `src/companion/WebMatrixTab.vue` | 33 | 13 |
-| `src/companion/companion.ts` | 45 | 28 |
-| `src/components/PetCanvasStage.vue` | 122 | 96 |
-| `src/components/RadialMenu.vue` | 36 | 24 |
-| `src/components/SpeechBubble.vue` | 13 | 2 |
-| `src/components/StageHudDock.vue` | 0 | 1 |
-| `src/components/StudioOverlay.vue` | 57 | 18 |
-| `src/hud/HudApp.vue` | 43 | 33 |
-| `src/store/careStore.ts` | 427 | 342 |
-| `src/store/petStore.ts` | 611 | 474 |
-| `src/types/pet.d.ts` | 18 | 5 |
-| `src/utils/audioLipSync.ts` | 26 | 9 |
-| `src/utils/commandEngine.ts` | 231 | 164 |
-| `src/utils/stageRuntime.ts` | 267 | 198 |
-| `src/utils/yamlLoader.ts` | 4 | 2 |
-| `test_external_app.py` | 89 | 7 |
-| `vite.config.ts` | 31 | 13 |
+| `README.md` | 15 | 1 |
+| `docs/VERIFICATION.md` | 40 | 88 |
+| `package.json` | 1 | 0 |
+| `scripts/verify.mjs` | 80 | 2 |
+| `src-tauri/src/action_executor.rs` | 146 | 0 |
+| `src-tauri/src/main.rs` | 1 | 1 |
+| `src-tauri/src/win32_window.rs` | 82 | 10 |
+| `src-tauri/src/ws_server.rs` | 109 | 6 |

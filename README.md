@@ -48,12 +48,20 @@ DesktopPetHost/
 npm install         # 安装依赖
 npm run dev         # 仅前端预览（浏览器）
 npm run typecheck   # vue-tsc 静态检查
-npm test            # Vitest 单元测试
+npm test            # Vitest 单元测试（前端）
+npm run test:rust   # cargo test（令牌、鉴权闸门、动作白名单、Win32 标志位）
 npm run scan:dead   # 死导出扫描（src/** + tests/**，发现冗余即退出码 1）
 npm run verify      # 发布前取证：PE 二进制 / git 比对 / 残留检查 / 死导出 / 逐文件 diff
 npm run build       # 类型检查 + 死导出扫描 + 生产构建
 npm run tauri dev   # 启动桌面宿主（开发，连接 Vite dev server）
 npm run tauri build # 打包安装程序（需要 Rust 与 MSVC 工具链）
+```
+
+Rust 侧另有两个门禁，与 CI 使用同一条命令：
+
+```bash
+cargo fmt --manifest-path src-tauri/Cargo.toml --check
+cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --features custom-protocol -- -D warnings
 ```
 
 `scan:dead` 统计每个导出符号在 `src/**` 与 `tests/**` 中的真实引用（剥离 import/export
@@ -83,6 +91,12 @@ src-tauri/target/release/bundle/
 
 首次运行会由 Tauri 自动下载 WiX 与 NSIS 工具链（约 45 MB，缓存在
 `%LOCALAPPDATA%\tauri`）；网络中断会导致打包失败，重跑即可续用已缓存的部分。
+
+**两个安装包的安装范围不同**：NSIS 默认按当前用户安装到 `%LOCALAPPDATA%`，无需管理员
+权限；MSI 由 Tauri 的 WiX 打包器固定生成 per-machine 包，安装时需要提权
+（`msiexec /i ... /qn` 返回 1603 / Error 1925 属预期）。这不是可配置项——当前 Tauri
+版本的 `WixConfig` 并未暴露 `installMode`，只有 `NsisConfig` 有。给不需要管理员权限的
+用户分发时，请指向 NSIS 包。
 
 带 `custom-protocol` 构建出的二进制自带前端资源，可在关闭 Vite dev server 的情况下独立运行：
 

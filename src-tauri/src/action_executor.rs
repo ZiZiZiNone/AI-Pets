@@ -155,3 +155,149 @@ fn build_command_with_python_fallback(program: &str, args: &[String]) -> Command
     c.args(args);
     c
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cmd(name: &str) -> SafeActionCommand {
+        serde_json::from_value(serde_json::json!({ "action_id": name })).expect("unit variant")
+    }
+
+    fn cmd_with(name: &str, params: serde_json::Value) -> SafeActionCommand {
+        serde_json::from_value(serde_json::json!({ "action_id": name, "params": params }))
+            .expect("variant with params")
+    }
+
+    #[test]
+    fn unit_variants_execute() {
+        let cases = [
+            ("open_companion", "action:open_companion"),
+            ("toggle_studio", "action:toggle_studio"),
+            ("open_official_docs_skip", ""),
+            ("trigger_greeting", "action:greeting"),
+            ("trigger_scan", "action:scan"),
+        ];
+        for (name, expected) in cases {
+            if expected.is_empty() {
+                continue; // opens a browser; covered by its own side-effecting path
+            }
+            assert_eq!(execute_whitelisted_action(&cmd(name)).unwrap(), expected);
+        }
+    }
+
+    #[test]
+    fn allowed_emotions_are_accepted() {
+        for emotion in [
+            "idle",
+            "happy",
+            "angry",
+            "glitch",
+            "speaking",
+            "sleep",
+            "smile",
+            "surprised",
+            "sleepy",
+            "neutral",
+        ] {
+            let action = cmd_with("switch_emotion", serde_json::json!({ "emotion": emotion }));
+            assert_eq!(
+                execute_whitelisted_action(&action).unwrap(),
+                format!("emotion:{emotion}")
+            );
+        }
+    }
+
+    #[test]
+    fn emotion_outside_the_whitelist_is_rejected() {
+        // The whitelist is the security boundary for externally supplied identifiers,
+        // so an unknown value must fail loudly rather than fall through.
+        for emotion in ["", "HAPPY", "neutral; rm -rf /", "happy\nhappy"] {
+            let action = cmd_with("switch_emotion", serde_json::json!({ "emotion": emotion }));
+            let err = execute_whitelisted_action(&action).unwrap_err();
+            assert!(
+                err.starts_with("Disallowed emotion identifier"),
+                "unexpected error for {emotion:?}: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn known_pets_are_accepted() {
+        for pet in [
+            "aether_mecha_core",
+            "demo_sprite_pet",
+            "nyx_abyssal_familiar",
+            "pulse_glitch_phantom",
+        ] {
+            let action = cmd_with("switch_pet", serde_json::json!({ "pet_id": pet }));
+            assert_eq!(
+                execute_whitelisted_action(&action).unwrap(),
+                format!("pet:{pet}")
+            );
+        }
+    }
+
+    #[test]
+    fn unknown_pet_is_rejected() {
+        for pet in ["", "../secrets", "AETHER_MECHA_CORE", "demo_sprite_pet "] {
+            let action = cmd_with("switch_pet", serde_json::json!({ "pet_id": pet }));
+            assert!(execute_whitelisted_action(&action)
+                .unwrap_err()
+                .starts_with("Unknown pet_id"));
+        }
+    }
+
+    #[test]
+    fn pomodoro_falls_back_to_twenty_five_minutes() {
+        assert_eq!(
+            execute_whitelisted_action(&cmd_with(
+                "start_pomodoro",
+                serde_json::json!({ "minutes": null })
+            ))
+            .unwrap(),
+            "action:pomodoro:25"
+        );
+        assert_eq!(
+            execute_whitelisted_action(&cmd_with(
+                "start_pomodoro",
+                serde_json::json!({ "minutes": 45 })
+            ))
+            .unwrap(),
+            "action:pomodoro:45"
+        );
+    }
+
+    #[test]
+    fn unknown_action_id_does_not_deserialize() {
+        // An unrecognised id must never become an executable variant.
+        assert!(
+            serde_json::from_value::<SafeActionCommand>(serde_json::json!({
+                "action_id": "run_shell"
+            }))
+            .is_err()
+        );
+        assert!(
+            serde_json::from_value::<SafeActionCommand>(serde_json::json!({
+                "action_id": "open_companion",
+                "params": {}
+            }))
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn unknown_action_type_is_dispatched_not_executed() {
+        let payload = PetActionPayload {
+            action_type: "definitely_not_a_known_type".into(),
+            command: None,
+            args: None,
+            cwd: None,
+            target: None,
+            url: None,
+        };
+        assert!(execute_general_pet_action(&payload, None)
+            .unwrap()
+            .starts_with("动作 ["));
+    }
+}

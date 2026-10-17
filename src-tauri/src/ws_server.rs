@@ -100,7 +100,7 @@ impl WsCommandBroker {
         .to_string();
 
         let clients = self.clients.lock().await;
-        for (_, (app_id, tx)) in clients.iter() {
+        for (app_id, tx) in clients.values() {
             if target_app_id == "broadcast" || target_app_id.is_empty() || app_id == target_app_id {
                 let _ = tx.send(Message::Text(msg.clone()));
             }
@@ -145,6 +145,9 @@ pub async fn start_ws_server(app: AppHandle, port_range: (u16, u16), broker: Arc
         let broker_clone = broker.clone();
 
         tokio::spawn(async move {
+            // `accept_hdr_async` fixes this signature, so the large `Err` variant is
+            // dictated by tungstenite and cannot be boxed away.
+            #[allow(clippy::result_large_err)]
             let callback = |req: &Request, response: Response| {
                 if let Some(origin) = req.headers().get("Origin") {
                     let origin_str = origin.to_str().unwrap_or("");
@@ -199,10 +202,7 @@ pub async fn start_ws_server(app: AppHandle, port_range: (u16, u16), broker: Arc
                 ));
                 loop {
                     ticker.tick().await;
-                    if ping_tx
-                        .send(Message::Ping(Vec::<u8>::new().into()))
-                        .is_err()
-                    {
+                    if ping_tx.send(Message::Ping(Vec::new())).is_err() {
                         break;
                     }
                 }
@@ -335,7 +335,7 @@ fn handle_hotplug_method(
     let app_id = params
         .get("app_id")
         .and_then(|v| v.as_str())
-        .or_else(|| pkt_app_id.as_deref())
+        .or(pkt_app_id.as_deref())
         .unwrap_or("external_app");
 
     match method {
@@ -378,5 +378,108 @@ fn handle_hotplug_method(
             let _ = app.emit("hud-clear", params);
         }
         _ => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn broker_with_token(name: &str) -> Arc<WsCommandBroker> {
+        let path = std::env::temp_dir().join(format!("desktop-pet-host-{name}.token"));
+        WsCommandBroker::init_with_token_file(path)
+    }
+
+    #[test]
+    fn token_has_the_documented_shape() {
+        let token = generate_token();
+        assert!(token.starts_with(TOKEN_PREFIX), "missing prefix: {token}");
+        // 128 bits rendered as two 16-digit hex halves.
+        assert_eq!(
+            token.len(),
+            TOKEN_PREFIX.len() + 32,
+            "wrong length: {token}"
+        );
+        let body = &token[TOKEN_PREFIX.len()..];
+        assert!(
+            body.chars()
+                .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
+            "token body must be lowercase hex: {token}"
+        );
+    }
+
+    #[test]
+    fn consecutive_tokens_differ() {
+        let tokens: Vec<String> = (0..64).map(|_| generate_token()).collect();
+        let unique: std::collections::HashSet<&String> = tokens.iter().collect();
+        assert_eq!(
+            unique.len(),
+            tokens.len(),
+            "token generator repeated itself"
+        );
+    }
+
+    #[test]
+    fn token_does_not_leak_the_process_id() {
+        // The previous scheme was `pet_tk_{pid}`, which any local process could guess.
+        let pid = std::process::id().to_string();
+        let token = generate_token();
+        assert!(
+            !token.ends_with(&pid),
+            "token still embeds the pid: {token}"
+        );
+    }
+
+    #[test]
+    fn authorize_accepts_only_the_exact_token() {
+        let broker = broker_with_token("accepts");
+        let valid = broker.expected_token.clone();
+        assert!(broker.authorize(Some(&valid)));
+    }
+
+    #[test]
+    fn authorize_rejects_missing_wrong_and_near_miss_tokens() {
+        let broker = broker_with_token("rejects");
+        let valid = broker.expected_token.clone();
+
+        assert!(!broker.authorize(None), "missing token must be rejected");
+        assert!(!broker.authorize(Some("")), "empty token must be rejected");
+        assert!(!broker.authorize(Some("dev_fallback_token")));
+        assert!(
+            !broker.authorize(Some(&valid.to_uppercase())),
+            "case must matter"
+        );
+        assert!(
+            !broker.authorize(Some(&valid[..valid.len() - 1])),
+            "prefix must not pass"
+        );
+        assert!(
+            !broker.authorize(Some(&format!("{valid}x"))),
+            "extension must not pass"
+        );
+        assert!(!broker.authorize(Some("pet_tk_0")));
+    }
+
+    #[test]
+    fn tokens_from_two_brokers_are_not_interchangeable() {
+        let a = broker_with_token("broker-a");
+        let b = broker_with_token("broker-b");
+        let a_token = a.expected_token.clone();
+        let b_token = b.expected_token.clone();
+
+        assert_ne!(a_token, b_token, "two processes must not share a token");
+        assert!(
+            !b.authorize(Some(&a_token)),
+            "cross-process token must fail"
+        );
+        assert!(a.authorize(Some(&a_token)));
+    }
+
+    #[test]
+    fn token_is_written_to_the_supplied_path() {
+        let path = std::env::temp_dir().join("desktop-pet-host-written.token");
+        let broker = WsCommandBroker::init_with_token_file(path.clone());
+        let on_disk = std::fs::read_to_string(&path).expect("token file");
+        assert_eq!(on_disk.trim(), broker.expected_token);
     }
 }

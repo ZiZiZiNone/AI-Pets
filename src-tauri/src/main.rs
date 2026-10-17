@@ -206,7 +206,7 @@ fn query_process_memory_mb() -> u64 {
             .output()
         {
             let line = String::from_utf8_lossy(&out.stdout);
-            if let Some(last_col) = line.split(',').last() {
+            if let Some(last_col) = line.split(',').next_back() {
                 let digits: String = last_col.chars().filter(|c| c.is_ascii_digit()).collect();
                 if let Ok(kb) = digits.parse::<u64>() {
                     if kb > 0 {
