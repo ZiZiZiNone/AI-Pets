@@ -20,7 +20,7 @@ import { join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
-const EXE = join(ROOT, 'src-tauri', 'target', 'release', 'desktop-pet-host.exe');
+const EXE = join(ROOT, 'src-tauri', 'target', 'release', 'ai-pets.exe');
 const OUT = join(ROOT, 'docs', 'VERIFICATION.md');
 const WATCHED = ['src', 'tests', 'scripts'];
 

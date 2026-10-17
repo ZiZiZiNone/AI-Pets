@@ -1,8 +1,8 @@
 [package]
-name = "desktop-pet-host"
+name = "ai-pets"
 version = "2.0.0"
-description = "Multi-format (2D/Live2D/Spine/VRM) micro-kernel desktop pet host built with Tauri v2"
-authors = ["DesktopPetHost Team"]
+description = "AI-Pets — multi-format (2D/Live2D/Spine/VRM) micro-kernel desktop pet host built with Tauri v2"
+authors = ["AI-Pets Team"]
 edition = "2021"
 
 [build-dependencies]

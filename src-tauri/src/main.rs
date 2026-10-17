@@ -569,7 +569,7 @@ fn setup_system_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>>
     let quit_item = MenuItem::with_id(
         app,
         "tray_quit",
-        "✕ 退出 DesktopPetHost",
+        "✕ 退出 AI-Pets",
         true,
         None::<&str>,
     )?;
@@ -581,7 +581,7 @@ fn setup_system_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>>
 
     let mut builder = TrayIconBuilder::new()
         .menu(&menu)
-        .tooltip("DesktopPetHost — 全息微内核桌面伴侣")
+        .tooltip("AI-Pets — 全息微内核桌面伴侣")
         .on_menu_event(|app_handle, event| match event.id.as_ref() {
             "tray_show_pet" => {
                 let state = app_handle.state::<Mutex<CanonicalPetState>>();
@@ -699,7 +699,7 @@ fn main() {
             get_system_telemetry
         ])
         .run(tauri::generate_context!())
-        .expect("error while running DesktopPetHost application");
+        .expect("error while running AI-Pets application");
 }
 
 #[cfg(test)]

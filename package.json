@@ -1,9 +1,12 @@
 {
-  "name": "desktop-pet-host",
+  "name": "ai-pets",
   "private": true,
   "version": "2.0.0",
-  "description": "Multi-format (2D/Live2D/Spine/VRM) micro-kernel desktop pet host built with Tauri v2, Vue 3, PixiJS, and Three.js",
+  "description": "AI-Pets — multi-format (2D/Live2D/Spine/VRM) micro-kernel desktop pet host built with Tauri v2, Vue 3, PixiJS, and Three.js",
   "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "vite",
     "typecheck": "vue-tsc --noEmit --noUnusedLocals --noUnusedParameters",

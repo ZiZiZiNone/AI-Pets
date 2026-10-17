@@ -464,7 +464,7 @@ mod tests {
     use super::*;
 
     fn broker_with_token(name: &str) -> Arc<WsCommandBroker> {
-        let path = std::env::temp_dir().join(format!("desktop-pet-host-{name}.token"));
+        let path = std::env::temp_dir().join(format!("ai-pets-{name}.token"));
         WsCommandBroker::init_with_token_candidates(&[path])
     }
 
@@ -555,7 +555,7 @@ mod tests {
 
     #[test]
     fn token_is_written_to_the_supplied_path() {
-        let path = std::env::temp_dir().join("desktop-pet-host-written.token");
+        let path = std::env::temp_dir().join("ai-pets-written.token");
         let broker = WsCommandBroker::init_with_token_candidates(std::slice::from_ref(&path));
         let on_disk = std::fs::read_to_string(&path).expect("token file");
         assert_eq!(on_disk.trim(), broker.expected_token);
@@ -568,10 +568,10 @@ mod tests {
         // an installed build is exactly there. A candidate whose parent is a file stands
         // in for that here, because writing through it cannot succeed either.
         let dir = std::env::temp_dir();
-        let blocker = dir.join("desktop-pet-host-not-a-directory");
+        let blocker = dir.join("ai-pets-not-a-directory");
         std::fs::write(&blocker, b"file, not a directory").expect("blocker file");
         let unwritable = blocker.join(TOKEN_FILE_NAME);
-        let fallback = dir.join("desktop-pet-host-fallback.token");
+        let fallback = dir.join("ai-pets-fallback.token");
 
         let broker = WsCommandBroker::init_with_token_candidates(&[unwritable, fallback.clone()]);
 
@@ -587,7 +587,7 @@ mod tests {
     #[test]
     fn no_writable_candidate_leaves_the_token_unplaced() {
         let dir = std::env::temp_dir();
-        let blocker = dir.join("desktop-pet-host-not-a-directory-either");
+        let blocker = dir.join("ai-pets-not-a-directory-either");
         std::fs::write(&blocker, b"file, not a directory").expect("blocker file");
 
         let broker = WsCommandBroker::init_with_token_candidates(&[blocker.join("token")]);

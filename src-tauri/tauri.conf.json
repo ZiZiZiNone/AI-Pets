@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "DesktopPetHost",
+  "productName": "AI-Pets",
   "version": "2.0.0",
-  "identifier": "com.desktoppethost.microkernel",
+  "identifier": "com.aipets.microkernel",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -14,7 +14,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "DesktopPetHost",
+        "title": "AI-Pets",
         "url": "index.html",
         "width": 360,
         "height": 420,
@@ -30,7 +30,7 @@
       },
       {
         "label": "companion",
-        "title": "DesktopPetHost Companion",
+        "title": "AI-Pets Companion",
         "url": "companion.html",
         "width": 380,
         "height": 520,
@@ -46,7 +46,7 @@
       },
       {
         "label": "hud",
-        "title": "DesktopPetHost Tactical HUD",
+        "title": "AI-Pets Tactical HUD",
         "url": "hud.html",
         "width": 1920,
         "height": 1080,

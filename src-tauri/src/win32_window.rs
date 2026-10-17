@@ -226,8 +226,8 @@ pub fn query_foreground_window_state() -> DesktopWindowState {
             rect.left <= 0 && rect.top <= 0 && width >= screen_w && height >= screen_h;
 
         DesktopWindowState {
-            has_foreground_window: !title.contains("DesktopPetHost"),
-            is_fullscreen: is_fullscreen && !title.contains("DesktopPetHost"),
+            has_foreground_window: !title.contains("AI-Pets"),
+            is_fullscreen: is_fullscreen && !title.contains("AI-Pets"),
             title,
             x: rect.left,
             y: rect.top,

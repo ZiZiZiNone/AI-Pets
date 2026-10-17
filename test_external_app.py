@@ -12,7 +12,7 @@ import threading
 import time
 
 TOKEN_FILE_NAME = ".pet_ws_token"
-APP_IDENTIFIER = "com.desktoppethost.microkernel"
+APP_IDENTIFIER = "com.aipets.microkernel"
 DEFAULT_PORTS = range(9527, 9538)
 SELFTEST_TOKEN = "selftest_token"
 
@@ -47,7 +47,7 @@ def read_local_token() -> str:
         return token
     locations = "\n  ".join(str(path) for path in tried)
     raise ConnectionError(
-        f"bus token not found. Start DesktopPetHost first, then retry. Looked in:\n  {locations}"
+        f"bus token not found. Start AI-Pets first, then retry. Looked in:\n  {locations}"
     )
 
 
@@ -181,7 +181,7 @@ def connect_to_active_pet_port(ports=DEFAULT_PORTS) -> StdlibWebSocketClient:
             return client
         except Exception:
             continue
-    raise ConnectionError("DesktopPetHost not reachable on ports 9527..9537")
+    raise ConnectionError("AI-Pets not reachable on ports 9527..9537")
 
 
 def run_protocol_steps(ws: StdlibWebSocketClient, token: str, pause_sec: float = 0.8) -> None:

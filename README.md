@@ -1,11 +1,97 @@
-# DesktopPetHost
+# AI-Pets
 
 基于 Tauri v2、Vue 3、TypeScript、PixiJS 与 Three.js 的桌面宠物宿主，支持 2D 矢量/序列帧、Live2D、Spine 与 VRM 渲染，并提供带令牌鉴权的本地 WebSocket 热插拔总线。
+
+面向使用者的说明（安装、界面、托盘菜单、伴生面板、常见问题）见
+[`docs/使用说明书.md`](docs/使用说明书.md)；下面这份是给开发者看的。
+
+## 直接下载安装包（推荐）
+
+不想在本机安装 Rust 与 MSVC 工具链，就用 GitHub Actions 构建好的安装包：
+
+1. 打开 [Releases 页面](https://github.com/ZiZiZiNone/AI-Pets/releases)，下载最新版本的
+   `AI-Pets_*_x64-setup.exe`
+2. 双击安装
+3. 启动后托盘出现图标，桌宠出现在当前显示器右下角
+
+两个安装包的区别：
+
+| 文件 | 安装范围 | 管理员权限 |
+| --- | --- | --- |
+| `AI-Pets_*_x64-setup.exe`（NSIS） | 当前用户，装到 `%LOCALAPPDATA%` | **不需要，普通用户选这个** |
+| `AI-Pets_*_x64_en-US.msi`（MSI） | 全机（per-machine） | 需要提权；`msiexec /qn` 返回 `1603` / `Error 1925` 属预期 |
+
+这些安装包由 [Release 工作流](.github/workflows/release.yml) 在 GitHub 的 windows runner 上构建。
+该 runner 预装 MSVC Build Tools，因此这里产出的就是「标准构建」，也是别人最省事的获取途径。
+想自己复现或改代码，见下面「从零启动」。
+
+## 从零启动（Windows）
+
+### 前置条件
+
+| 依赖 | 版本 | 说明 |
+| --- | --- | --- |
+| [Node.js](https://nodejs.org/) | 22 或更高 | `.nvmrc` 与 `package.json` 的 `engines` 都锁定在 22，与 CI 一致 |
+| [Rust](https://rustup.rs/) | `stable` | 由仓库根目录的 `rust-toolchain.toml` 固定，`clippy` 与 `rustfmt` 会随工具链自动装好 |
+| [MSVC Build Tools](https://visualstudio.microsoft.com/downloads/) | 含「使用 C++ 的桌面开发」 | **走 MSVC 路线时链接 Rust 程序必需**（Visual Studio 社区版即可，不必装完整 IDE） |
+
+也可以选 GNU 路线：安装 `stable-x86_64-pc-windows-gnu` 工具链，并准备 MinGW-w64 或
+llvm-mingw 提供的 `libgcc`（仓库的 `.gitignore` 忽略了该文件，**本仓库不提供它**，
+需要的话按你的工具链文档自行放置），然后让 cargo 改用它：
+
+```bash
+rustup override set stable-x86_64-pc-windows-gnu
+```
+
+CI 走的是 MSVC 路线（`dtolnay/rust-toolchain@stable`），也是最省事的默认选择。
+若你的机器上 `cargo` 报 ``linker `link.exe` not found``，说明缺的就是上表里的 MSVC Build Tools，
+装上即可，或按上面切到 GNU 路线。
+
+### 四步跑起来
+
+```bash
+npm ci            # package-lock.json 已提交，npm ci 可复现，且会在锁文件漂移时报错
+npm run build     # 类型检查 + 死导出扫描 + 导入环检测 + 生产构建
+npm run tauri dev # 启动桌面宿主
+```
+
+只想跑前端的话，`npm ci` 之后 `npm run dev`（浏览器预览）、`npm test`、
+`npm run typecheck` 都能用——这三项**只需要 Node，不需要 Rust**。
+
+### 验证环境是否就绪
+
+```bash
+npm run scan:dead && npm run scan:cycles   # 两个门禁，发现冗余即非零退出
+npm test                                    # 前端单测
+npm run test:rust                           # Rust 单测
+cargo fmt --manifest-path src-tauri/Cargo.toml --check
+python test_external_app.py --selftest      # 总线协议离线自检，无需启动宿主
+```
+
+### 打包成安装包
+
+```bash
+npm run tauri build
+```
+
+首次运行会联网下载 WiX 与 NSIS 工具链（约 45 MB，缓存到 `%LOCALAPPDATA%\tauri`），
+网络中断后重跑即可续用已缓存部分。产物是 MSI 与 NSIS 两个包，两者的安装范围差异见
+[`docs/使用说明书.md`](docs/使用说明书.md) 第 2 节。打包出的程序在目标机器上需要
+**WebView2 Runtime**（Windows 11 与较新的 Windows 10 已预装）。
+
+### 新克隆机器上容易踩的坑
+
+- `cargo fmt` / `cargo clippy` 报 component not installed —— `rust-toolchain.toml`
+  通常会自动装好；仍报错就手动执行 `rustup component add clippy rustfmt`。
+- 打包后打开是白屏 —— 二进制没带 `custom-protocol` 特性，见下文 `cargo build --release` 的说明。
+- `msiexec` 返回 `1603` / `Error 1925` —— MSI 是 per-machine 包需要提权，属预期；
+  给普通用户分发请指向 NSIS 包。
+- 端口被占用导致外部程序连不上 —— 改 `config/settings.yaml` 的 `host.ws_port_range` 后重启宿主。
 
 ## 目录结构
 
 ```text
-DesktopPetHost/
+AI-Pets/
 ├── config/                       # 宿主全局配置（YAML，支持热重载）
 │   ├── settings.yaml
 │   └── global_menu.yaml
@@ -93,8 +179,8 @@ cargo build --release --features custom-protocol
 
 ```text
 src-tauri/target/release/bundle/
-├── msi/DesktopPetHost_2.0.0_x64_en-US.msi
-└── nsis/DesktopPetHost_2.0.0_x64-setup.exe
+├── msi/AI-Pets_2.0.0_x64_en-US.msi
+└── nsis/AI-Pets_2.0.0_x64-setup.exe
 ```
 
 首次运行会由 Tauri 自动下载 WiX 与 NSIS 工具链（约 45 MB，缓存在
@@ -137,7 +223,7 @@ python test_external_app.py --selftest   # 离线 RFC 6455 协议自检（无需
 令牌文件优先写在宿主进程的工作目录下，联调脚本默认从当前目录读取，因此开发与便携场景下
 脚本与宿主同目录运行即可。若该目录不可写（例如 per-machine 的 MSI 安装在
 `C:\Program Files`，普通用户无法在其中创建文件），宿主会退回到 per-user 的应用数据目录
-`%APPDATA%\com.desktoppethost.microkernel\.pet_ws_token`，脚本也会自动到那里查找。两处都
+`%APPDATA%\com.aipets.microkernel\.pet_ws_token`，脚本也会自动到那里查找。两处都
 写不进去时宿主会在 stderr 说明原因，而不是留下"总线在线但无法鉴权"的假象。
 
 握手阶段还会校验 `Origin`，只放行宿主自身的来源——`http://localhost`、`http://127.0.0.1`、
