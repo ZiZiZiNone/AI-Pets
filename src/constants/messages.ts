@@ -123,7 +123,7 @@ export const CARE_MESSAGES = {
 
 export const COMMAND_MESSAGES = {
   help:
-    '💡 快捷指令：/focus [分] | /break [分] | /todo <事项> | /feed | /sys | /fortune | /calc <算式> | /pet <宠物 id> | /reset',
+    '💡 快捷指令：/focus [分] | /break [分] | /stop | /todo <事项> | /feed | /sys | /fortune | /scan | /calc <算式> | /pet <宠物 id> | /reset',
   calcResult: (expression: string, result: number) =>
     `🧮 算力核心结果：${expression} = ${result}`,
   calcError: '⚠️ 算式格式无法解析，示例：`/calc (1024 * 64) / 8`',

@@ -177,9 +177,9 @@ const activeSchema = ref<SduiSchema>({
     {
       id: 'enable_tts',
       type: 'switch',
-      label: 'Web Speech 语音合成播报 (TTS)',
-      description: '弹出对话气泡时同步使用系统语音朗读文本',
-      value: false,
+      label: '语音合成播报 (TTS)',
+      description: '弹出对话气泡时朗读文本；用哪种声音在「🌐 网页与AI脑桥」的语音桥里选',
+      value: true,
     },
     {
       id: 'fps_mode',
