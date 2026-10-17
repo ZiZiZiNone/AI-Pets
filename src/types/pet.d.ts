@@ -308,6 +308,23 @@ export type SduiWidget =
       /** Adds a button that raises `panel.text_submitted` in addition to `panel.state_changed`. */
       submit_label?: string;
       effect?: SduiEffect;
+    }
+  | {
+      /**
+       * A card that holds other widgets.
+       *
+       * Nesting is what makes a schema a layout rather than a list: a panel that wants a
+       * caption above two related controls, or a row of buttons under a readout, previously
+       * had to flatten that into separate flat cards. Children are ordinary widgets, so a
+       * container can hold a container.
+       */
+      id: string;
+      type: 'container';
+      label?: string;
+      description?: string;
+      children: SduiWidget[];
+      /** `stack` (default) puts children in a column, `row` puts them side by side. */
+      layout?: 'stack' | 'row';
     };
 
 export interface SduiSchema {

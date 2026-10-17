@@ -169,6 +169,15 @@ export const PET_SWITCH_FAILURE_MS = 6000;
  */
 export const SDUI_SAY_DURATION_MS = 3600;
 
+/**
+ * How deep a panel's `container` widgets may nest.
+ *
+ * A schema is data, so it can describe a container inside itself; without a ceiling the
+ * renderer would recurse until the stack runs out. Four levels is more than any layout a
+ * control panel needs, and the level past it says so on screen rather than failing.
+ */
+export const SDUI_MAX_NESTING_DEPTH = 4;
+
 /** Radial menu geometry. */
 export const RADIAL_MENU_RADIUS_X_PX = 122;
 export const RADIAL_MENU_RADIUS_Y_PX = 114;

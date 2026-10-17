@@ -4,6 +4,7 @@ import { renderToString } from 'vue/server-renderer';
 import { describe, expect, it } from 'vitest';
 import PodsTab from '@/companion/PodsTab.vue';
 import type { SduiSchema, SduiWidget } from '@/types/pet';
+import { SDUI_MAX_NESTING_DEPTH } from '@/constants/timing';
 
 /**
  * Renders the companion's SDUI surface for real rather than asserting on the type union.
@@ -132,5 +133,68 @@ describe('SDUI widget surface', () => {
     ]);
     expect(html).toContain('语音播报');
     expect(html).toContain('cyber-switch');
+  });
+
+  it('renders the children of a container, not just the container', async () => {
+    // A container that renders its own label and drops `children` would satisfy the type
+    // union and still lose whatever the panel put inside it.
+    const html = await renderWidgets([
+      {
+        id: 'group',
+        type: 'container',
+        label: '语音设置',
+        children: [
+          { id: 'c1', type: 'switch', label: '朗读气泡', value: true },
+          { id: 'c2', type: 'slider', label: '音量', value: 3, min: 1, max: 5 },
+        ],
+      },
+    ]);
+    expect(html).toContain('语音设置');
+    expect(html).toContain('朗读气泡');
+    expect(html).toContain('音量');
+    expect(html).toContain('sdui-container');
+  });
+
+  it('nests a container inside a container', async () => {
+    const html = await renderWidgets([
+      {
+        id: 'outer',
+        type: 'container',
+        layout: 'row',
+        children: [
+          {
+            id: 'inner',
+            type: 'container',
+            label: '内层分组',
+            children: [{ id: 'deep', type: 'status_badge', label: '深层状态', value: 'OK' }],
+          },
+        ],
+      },
+    ]);
+    expect(html).toContain('内层分组');
+    expect(html).toContain('深层状态');
+    expect(html).toContain('layout-row');
+  });
+
+  it('renders up to the nesting ceiling and explains the level past it', async () => {
+    // A schema is data, so it can describe a container inside itself. Without a ceiling the
+    // renderer recurses until the stack runs out; with one, the level past it has to explain
+    // itself rather than render an empty box. The leaf sits one level below the innermost
+    // container, so it is reachable exactly when that container is still rendered.
+    const nest = (levels: number): SduiWidget => {
+      let widget: SduiWidget = { id: 'leaf', type: 'status_badge', label: '最深处', value: 'X' };
+      for (let i = 0; i < levels; i += 1) {
+        widget = { id: `n${i}`, type: 'container', children: [widget] };
+      }
+      return widget;
+    };
+
+    const withinCeiling = await renderWidgets([nest(SDUI_MAX_NESTING_DEPTH)]);
+    expect(withinCeiling).toContain('最深处');
+    expect(withinCeiling).not.toContain('嵌套层数超过');
+
+    const pastCeiling = await renderWidgets([nest(SDUI_MAX_NESTING_DEPTH + 1)]);
+    expect(pastCeiling).toContain(`嵌套层数超过 ${SDUI_MAX_NESTING_DEPTH} 层`);
+    expect(pastCeiling).not.toContain('最深处');
   });
 });
