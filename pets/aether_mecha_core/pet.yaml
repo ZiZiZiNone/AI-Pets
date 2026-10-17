@@ -97,11 +97,9 @@ drop_handlers:
 menus:
   - id: "aether_tactical"
     label: "战术核心"
-    icon: "💠"
     children:
       - id: "aether_overdrive"
         label: "开启过载脉冲"
-        icon: "⚡"
         badge: "OVERDRIVE"
         action:
           type: "emit"
@@ -113,7 +111,6 @@ menus:
             text: "[OVERDRIVE] 反重力浮游翼全功率展开！全屏 AR 雷达待命中。"
       - id: "aether_scan_hud"
         label: "全屏战术扫描"
-        icon: "🎯"
         action:
           type: "emit"
           app_id: "internal"
@@ -121,7 +118,6 @@ menus:
           payload: {}
       - id: "aether_stealth"
         label: "休眠隐匿模式"
-        icon: "🌙"
         action:
           type: "emit"
           app_id: "internal"

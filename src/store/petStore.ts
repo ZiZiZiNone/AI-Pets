@@ -75,6 +75,7 @@ const STORAGE_KEYS = {
 
 const DEFAULT_LLM_CONFIG: LlmBridgeConfig = {
   enabled: false,
+  provider: 'openai_compatible',
   apiUrl: 'https://api.openai.com/v1/chat/completions',
   apiKey: '',
   model: LLM_DEFAULT_MODEL,
@@ -141,7 +142,7 @@ export const usePetStore = defineStore('petStore', () => {
     typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel(STAGE_CHANNEL_NAME) : null;
 
   const activeTheme = computed<PetThemePalette>(
-    () => resolvePetTheme(currentPet.value?.id || active_pet_id.value)
+    () => resolvePetTheme(currentPet.value?.id || active_pet_id.value, currentPet.value?.theme)
   );
   const activeThemeCssVars = computed(() => themeToCssVars(activeTheme.value));
   const mouthOpenY = computed(() => lipSync.value.mouthOpenY);

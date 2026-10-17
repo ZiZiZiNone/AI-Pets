@@ -97,11 +97,9 @@ drop_handlers:
 menus:
   - id: "pet_exclusive"
     label: "星奈专属"
-    icon: "🌟"
     children:
       - id: "nova_dance"
         label: "元气跳跃"
-        icon: "🎵"
         action:
           type: "emit"
           app_id: "internal"
@@ -112,7 +110,6 @@ menus:
             text: "啦啦啦~ 元气满满的一天开始啦！"
       - id: "nova_sleep"
         label: "小憩模式"
-        icon: "💤"
         action:
           type: "emit"
           app_id: "internal"

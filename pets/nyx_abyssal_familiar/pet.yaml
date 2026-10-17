@@ -86,11 +86,9 @@ drop_handlers:
 menus:
   - id: "nyx_arcane"
     label: "星盘秘术"
-    icon: "🔮"
     children:
       - id: "nyx_divination"
         label: "今日代码占卜"
-        icon: "✨"
         action:
           type: "emit"
           app_id: "internal"
@@ -98,7 +96,6 @@ menus:
           payload: {}
       - id: "nyx_astral_scan"
         label: "星轨法阵扫描"
-        icon: "🎯"
         action:
           type: "emit"
           app_id: "internal"
@@ -106,7 +103,6 @@ menus:
           payload: {}
       - id: "nyx_slumber"
         label: "深渊冥想休眠"
-        icon: "🌙"
         action:
           type: "emit"
           app_id: "internal"

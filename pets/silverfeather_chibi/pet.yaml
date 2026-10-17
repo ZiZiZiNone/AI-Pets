@@ -1,0 +1,180 @@
+id: "silverfeather_chibi"
+name: "银羽（Q版）"
+version: "2.0.0"
+type: "sprite"
+description: "成年女性 AI 游戏主播的 Q 版化身：银白长发缀粉、蓝瞳、黑色羽饰与羽翼，温柔灵动又略带好奇"
+
+model:
+  entry: "idle.png"
+  scale: 1.0
+  offset:
+    x: 0
+    y: 0
+  fps: 60
+  animations:
+    idle:
+      file: "idle.png"
+      loop: true
+    thinking:
+      file: "thinking.png"
+      loop: true
+    speaking:
+      file: "speaking.png"
+      loop: true
+    happy:
+      file: "speaking.png"
+      loop: false
+      duration_ms: 2400
+    pat:
+      file: "thinking.png"
+      loop: false
+      duration_ms: 1900
+    feed:
+      file: "speaking.png"
+      loop: false
+      duration_ms: 2600
+    drag:
+      file: "idle.png"
+      loop: true
+    climb:
+      file: "idle.png"
+      loop: true
+    sleep:
+      file: "thinking.png"
+      loop: true
+
+expressions:
+  neutral:
+    tint: 0xffffff
+  smile:
+    tint: 0xfff1e6
+  surprised:
+    tint: 0xe0f2fe
+  sleepy:
+    tint: 0xcbd5e1
+
+# 人格定义。宿主据此组装给大模型的系统提示词，同样不需要改源码。
+persona:
+  identity: "你是银羽，一名成年女性 AI 游戏主播。"
+  traits:
+    - "温柔灵动"
+    - "好奇"
+    - "略带撒娇但不黏人"
+  style_notes: |-
+    对直播间统一称「大家」，对具体观众沿用可读昵称。
+    操作密集时认真简短，只说重点；遇到危险提醒直接讲结论。
+    闲聊时亲切自然，不要反复堆叠撒娇尾词。
+    只根据当前画面和发生的事件回答；看不清或尚未确认的事，说明你也不确定，不要编造。
+
+# 专属配色随宠物一起分发。写在这里就不需要改任何源码，
+# 整个 pets/silverfeather_chibi/ 目录就是可拷贝的完整单元。
+theme:
+  id: "silverplume_stream"
+  name: "银羽流光 (Silverplume Stream)"
+  primary: "#a5b4fc"
+  accent: "#f9a8d4"
+  glow: "rgba(165, 180, 252, 0.55)"
+  surface: "rgba(28, 26, 46, 0.92)"
+  border: "rgba(165, 180, 252, 0.6)"
+  text: "#f8fafc"
+  subtext: "#c7d2fe"
+  particleColor: "#a5b4fc"
+
+hit_areas:
+  - name: "head"
+    label: "轻抚银发"
+    rect:
+      x: 64
+      y: 4
+      w: 192
+      h: 122
+    motion: "pat"
+    expression: "smile"
+    texts:
+      - "唔……头发会乱掉的啦。不过，偶尔摸一下下也可以 ✨"
+      - "大家看，发梢刚刚自己翘起来了——这个我没法解释。"
+      - "银羽频道信号满格，随时待命 🎙️"
+  - name: "body"
+    label: "羽翼共振"
+    rect:
+      x: 60
+      y: 128
+      w: 200
+      h: 130
+    motion: "happy"
+    expression: "surprised"
+    texts:
+      - "翅膀被碰到了！羽毛全都竖起来了……"
+      - "嗯？大家有什么新任务要交给我吗？"
+      - "右键或者点菜单按钮，可以召唤我的直播控制台哦~"
+
+drop_handlers:
+  - extensions: [".py", ".rs", ".ts", ".js", ".vue", ".json", ".yaml", ".yml", ".md", ".txt"]
+    motion: "feed"
+    expression: "smile"
+    bubble_template: "🪶 银羽接住了 [{filename}]，正在读这段脚本……"
+    action:
+      type: "exec"
+      command: "python"
+      args: ["-c", "import sys, os; p=sys.argv[1]; sz=os.path.getsize(p); lines=sum(1 for _ in open(p, 'rb')); print(f'[银羽读本] {os.path.basename(p)} -> 共 {lines} 行 / {sz} Bytes，读完啦 ✨')"]
+  - extensions: ["*"]
+    motion: "feed"
+    expression: "surprised"
+    bubble_template: "🪶 已把 [{filename}] 记进今晚的直播素材清单！"
+    action:
+      type: "emit"
+      app_id: "broadcast"
+      event: "pet.file_dropped"
+      payload: {}
+
+menus:
+  - id: "silverfeather_studio"
+    label: "银羽直播间"
+    children:
+      - id: "silverfeather_greet"
+        label: "向大家打招呼"
+        action:
+          type: "emit"
+          app_id: "internal"
+          event: "pet.quick_action"
+          payload:
+            motion: "speaking"
+            expression: "smile"
+            text: "大家晚上好呀，我是银羽 🪶 今天想看点什么内容？"
+      - id: "silverfeather_scan"
+        label: "全屏场控扫描"
+        action:
+          type: "emit"
+          app_id: "internal"
+          event: "pet.tactical_scan"
+          payload: {}
+      - id: "silverfeather_inspect"
+        label: "播控台体检"
+        action:
+          type: "emit"
+          app_id: "internal"
+          event: "pet.system_inspect"
+          payload: {}
+      - id: "silverfeather_fortune"
+        label: "抽取今日手气"
+        badge: "FORTUNE"
+        action:
+          type: "emit"
+          app_id: "internal"
+          event: "pet.fortune_divination"
+          payload: {}
+      - id: "silverfeather_chat"
+        label: "打开弹幕面板"
+        action:
+          type: "emit"
+          app_id: "internal"
+          event: "chat.toggle"
+          payload: {}
+      - id: "silverfeather_focus"
+        label: "进入专注录制"
+        action:
+          type: "emit"
+          app_id: "internal"
+          event: "pomodoro.start"
+          payload:
+            mode: "focus"

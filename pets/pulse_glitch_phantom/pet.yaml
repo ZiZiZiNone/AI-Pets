@@ -86,11 +86,9 @@ drop_handlers:
 menus:
   - id: "pulse_beat"
     label: "故障节拍"
-    icon: "🎸"
     children:
       - id: "pulse_drop"
         label: "全息色散冲击"
-        icon: "💥"
         badge: "BEAT"
         action:
           type: "emit"
@@ -102,7 +100,6 @@ menus:
             text: "💥 SYSTEM OVERLOAD // 赛博故障律动全开！"
       - id: "pulse_radar"
         label: "赛博雷达锁定"
-        icon: "🎯"
         action:
           type: "emit"
           app_id: "internal"
@@ -110,7 +107,6 @@ menus:
           payload: {}
       - id: "pulse_mute"
         label: "静默潜行待机"
-        icon: "🌙"
         action:
           type: "emit"
           app_id: "internal"

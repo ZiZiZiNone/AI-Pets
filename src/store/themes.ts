@@ -51,9 +51,20 @@ export const PET_THEMES: Record<string, PetThemePalette> = {
   },
 };
 
-export function resolvePetTheme(petId?: string): PetThemePalette {
-  if (!petId) return PET_THEMES.aether_mecha_core;
-  return PET_THEMES[petId] || PET_THEMES.aether_mecha_core;
+/**
+ * Resolve the palette for a pet.
+ *
+ * Precedence is manifest override > built-in registry > default. The override is
+ * what makes `pets/<id>/pet.yaml` self-contained: a third-party pet carries its own
+ * `theme:` block and never has to touch this file, which is source code and not
+ * something a user editing config can be asked to modify.
+ */
+export function resolvePetTheme(
+  petId?: string,
+  override?: Partial<PetThemePalette>
+): PetThemePalette {
+  const base = (petId && PET_THEMES[petId]) || PET_THEMES.aether_mecha_core;
+  return override ? { ...base, ...override } : base;
 }
 
 export function themeToCssVars(theme: PetThemePalette): Record<string, string> {
