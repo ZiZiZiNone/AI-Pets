@@ -292,6 +292,20 @@ export const usePetStore = defineStore('petStore', () => {
     stageBus?.postMessage({ lipSync: frame });
   }
 
+  /**
+   * Drive the mouth from what the microphone hears, so the pet visibly listens.
+   *
+   * Published as an ordinary lip-sync frame on purpose: the mouth follows it exactly as it
+   * follows a speech synthesiser, so nothing downstream needs to know which of the two is
+   * talking. The caller smooths the level first — a raw 80 ms sample would flicker.
+   */
+  function broadcastMouthLevel(mouthOpenY: number): void {
+    const level = Math.min(1, Math.max(0, Number.isFinite(mouthOpenY) ? mouthOpenY : 0));
+    // No formant shift: the microphone drives how far the mouth is open, not what shape the
+    // vowel has, and inventing one here would fight whatever the speech path last set.
+    broadcastLipSync({ mouthOpenY: level, mouthFormX: 0, rms: level, bands: [] });
+  }
+
   function markUserActivity(): void {
     lastUserActivityAt.value = Date.now();
     if (activeMotion.value === 'sleep' && !currentAction.value) {
@@ -875,6 +889,7 @@ export const usePetStore = defineStore('petStore', () => {
     applySnapshot,
     dispatchPatch,
     broadcastLipSync,
+    broadcastMouthLevel,
     markUserActivity,
     switchPetById,
     scheduleAction,

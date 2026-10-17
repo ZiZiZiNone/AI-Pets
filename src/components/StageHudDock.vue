@@ -118,6 +118,16 @@
           <button @click.stop="runQuickCmd('/sys')">系统巡检</button>
         </div>
         <div class="chat-input-row">
+          <button
+            class="chat-mic-btn"
+            :class="{ listening: voiceBusy }"
+            :title="micButtonTitle"
+            :disabled="!micUsable"
+            @click.stop="toggleVoiceInput()"
+          >
+            <span class="mic-dot" :style="{ opacity: 0.25 + voiceLevel * 0.75 }"></span>
+            <span class="mic-label">{{ micButtonLabel }}</span>
+          </button>
           <input
             ref="chatInputRef"
             v-model="chatInputText"
@@ -132,6 +142,7 @@
           />
           <button class="chat-send-btn" @click.stop="submitChat">发送</button>
         </div>
+        <div v-if="voiceNotice" class="chat-voice-notice">{{ voiceNotice }}</div>
       </div>
     </transition>
 
@@ -148,9 +159,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { usePetStore } from '@/store/petStore';
 import { SLASH_COMMAND_HINTS } from '@/utils/commandEngine';
+import { describeSttReadiness, sttProviderInfo } from '@/utils/voiceProviders';
+import { createMouthLevelSmoother, recognizeOnce } from '@/utils/voiceInput';
 import type { SlashCommandHint } from '@/types/pet';
 
 defineProps<{
@@ -172,6 +185,83 @@ const petStore = usePetStore();
 const chatInputRef = ref<HTMLInputElement | null>(null);
 const chatInputText = ref<string>('');
 const historyCursor = ref<number>(-1);
+
+/**
+ * The stage's own way in to speech recognition.
+ *
+ * The recording flow lived only in the companion's voice bridge, a panel the user has to
+ * know to open before they can talk to the pet. The chat bar is where the conversation
+ * already happens, so the button that starts one belongs here.
+ *
+ * Click to start, click again to stop; the transcript lands in the input box and is *not*
+ * sent, because a misheard command that fired itself is worse than one you edit first.
+ */
+const voiceBusy = ref(false);
+const voiceLevel = ref(0);
+const voiceNotice = ref('');
+let voiceAbort: AbortController | null = null;
+let mouthSmoother = createMouthLevelSmoother();
+
+const sttSettings = computed(() => petStore.settings.audio.stt);
+const sttReadiness = computed(() => describeSttReadiness(sttSettings.value));
+const micUsable = computed(() => sttReadiness.value.usable);
+
+const micButtonLabel = computed(() => {
+  if (voiceBusy.value) return '停止';
+  return sttSettings.value.provider === 'none' ? '未配置' : '说话';
+});
+
+const micButtonTitle = computed(() => {
+  if (!sttReadiness.value.usable) return `未就绪：${sttReadiness.value.reason}`;
+  const name = sttProviderInfo(sttSettings.value.provider).label;
+  return `${name}｜点击开始识别，再点一次停止；结果只填进输入框，不会自动发送`;
+});
+
+async function toggleVoiceInput(): Promise<void> {
+  petStore.markUserActivity();
+  if (voiceBusy.value) {
+    voiceAbort?.abort();
+    return;
+  }
+  if (!sttReadiness.value.usable) {
+    voiceNotice.value = `语音识别未就绪：${sttReadiness.value.reason}`;
+    return;
+  }
+
+  voiceBusy.value = true;
+  voiceLevel.value = 0;
+  voiceNotice.value = '正在听…';
+  mouthSmoother = createMouthLevelSmoother();
+  voiceAbort = new AbortController();
+  try {
+    const outcome = await recognizeOnce(sttSettings.value, {
+      signal: voiceAbort.signal,
+      onLevel: (level) => {
+        voiceLevel.value = level;
+        // The pet opens its mouth on what it hears, so "it is listening" is visible on the
+        // character rather than only in this bar.
+        petStore.broadcastMouthLevel(mouthSmoother(level));
+      },
+    });
+    if (!outcome.ok) {
+      voiceNotice.value = outcome.reason;
+      return;
+    }
+    chatInputText.value = outcome.text;
+    voiceNotice.value = '已填入输入框，确认后再发送';
+    void nextTick(() => chatInputRef.value?.focus());
+  } finally {
+    voiceBusy.value = false;
+    voiceLevel.value = 0;
+    voiceAbort = null;
+    // Ease the mouth shut instead of leaving it wherever the last sample put it.
+    petStore.broadcastMouthLevel(0);
+  }
+}
+
+onBeforeUnmount(() => {
+  voiceAbort?.abort();
+});
 
 const matchingSlashHints = computed<SlashCommandHint[]>(() => {
   const trimmed = chatInputText.value.trim();
@@ -490,6 +580,53 @@ function cycleNextPet(): void {
 .chat-input-row {
   display: flex;
   gap: 5px;
+}
+
+/*
+ * The listening button shares the row with the field it fills, so it stays narrow: the
+ * label says what a press will do, and the dot carries the live level.
+ */
+.chat-mic-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  padding: 4px 7px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  color: #cbd5e1;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.chat-mic-btn:hover:not(:disabled) {
+  border-color: var(--theme-primary, #38bdf8);
+  color: var(--theme-primary, #38bdf8);
+}
+
+.chat-mic-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.chat-mic-btn.listening {
+  border-color: #f43f5e;
+  color: #fda4af;
+}
+
+.mic-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #f43f5e;
+}
+
+.chat-voice-notice {
+  font-size: 9.5px;
+  line-height: 1.45;
+  color: #94a3b8;
+  overflow-wrap: break-word;
 }
 
 .chat-input {

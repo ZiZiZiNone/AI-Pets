@@ -117,12 +117,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue';
 import { usePetStore } from '@/store/petStore';
-import {
-  describeMicrophoneFailure,
-  hasMicrophoneSupport,
-  listenWithWebSpeechRecognition,
-  recordWavFromMicrophone,
-} from '@/utils/audioCapture';
+import { hasMicrophoneSupport } from '@/utils/audioCapture';
 import {
   describeSttReadiness,
   describeTtsReadiness,
@@ -132,6 +127,7 @@ import {
   ttsProviderInfo,
 } from '@/utils/voiceProviders';
 import { synthesizeSpeech, transcribeAudio } from '@/utils/voiceEngine';
+import { createMouthLevelSmoother, recognizeOnce } from '@/utils/voiceInput';
 import { globalLipSync } from '@/utils/audioLipSync';
 
 const petStore = usePetStore();
@@ -147,6 +143,7 @@ const isRecording = ref<boolean>(false);
 const voiceLevel = ref<number>(0);
 const ttsBusy = ref<boolean>(false);
 let recorderAbort: AbortController | null = null;
+let mouthSmoother = createMouthLevelSmoother();
 
 /** What the selected mode talks to, plus why it cannot run when it cannot. */
 const ttsHint = computed(() => {
@@ -202,41 +199,31 @@ async function toggleRecording(): Promise<void> {
     recorderAbort?.abort();
     return;
   }
-  if (stt.value.provider === 'none') {
-    report('请先选择一种识别方式');
-    return;
-  }
   isRecording.value = true;
   voiceLevel.value = 0;
+  mouthSmoother = createMouthLevelSmoother();
   report('正在识别…');
   try {
-    if (stt.value.provider === 'web_speech') {
-      const text = await listenWithWebSpeechRecognition(stt.value.web_speech);
-      handleTranscript(text);
-      return;
-    }
-
     recorderAbort = new AbortController();
-    const recorded = await recordWavFromMicrophone({
-      maxMs: stt.value.web_speech.max_ms,
+    const outcome = await recognizeOnce(stt.value, {
       signal: recorderAbort.signal,
       onLevel: (level) => {
         voiceLevel.value = level;
+        // The pet mouths along with what it hears, which is the only feedback a panel that
+        // has no visible recording indicator can give while it waits.
+        petStore.broadcastMouthLevel(mouthSmoother(level));
       },
     });
-    report(`录到 ${(recorded.durationMs / 1000).toFixed(1)} 秒，正在转写…`);
-    const outcome = await transcribeAudio(recorded.bytes, stt.value);
     if (!outcome.ok) {
       report(outcome.reason);
       return;
     }
     handleTranscript(outcome.text);
-  } catch (error) {
-    // Permission problems are reported by name and location, never as a bare code.
-    report(error instanceof Error ? error.message : describeMicrophoneFailure(error));
   } finally {
     isRecording.value = false;
     voiceLevel.value = 0;
+    // Let the mouth ease shut rather than snapping there when the level stops arriving.
+    petStore.broadcastMouthLevel(0);
     recorderAbort = null;
   }
 }
