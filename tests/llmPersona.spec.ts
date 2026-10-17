@@ -6,7 +6,9 @@ import {
   buildLlmMessages,
   LLM_HISTORY_MAX_CHARS,
   LLM_HISTORY_MAX_MESSAGES,
+  LLM_HISTORY_MAX_TURNS,
   requestLlmCompletion,
+  resolveLlmHistoryMessages,
   trimLlmHistory,
 } from '@/utils/commandEngine';
 import { buildPetSystemPrompt, describePetPersona } from '@/utils/petPersona';
@@ -235,6 +237,51 @@ describe('llm providers', () => {
     const cfg: LlmProviderConfig = { apiUrl: '', apiKey: 'sk-x' };
     expect(await sendLlmChat([{ role: 'user', content: 'hi' }], cfg)).toBeNull();
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('configurable memory window', () => {
+  const turns = (n: number) =>
+    Array.from({ length: n }, (_, i) => [
+      { role: 'user' as const, content: `u${i}` },
+      { role: 'assistant' as const, content: `a${i}` },
+    ]).flat();
+
+  it('falls back to the default for anything that is not a usable number', () => {
+    // A config written before the field existed arrives as undefined, not as a number.
+    expect(resolveLlmHistoryMessages(undefined)).toBe(LLM_HISTORY_MAX_MESSAGES);
+    expect(resolveLlmHistoryMessages(Number.NaN)).toBe(LLM_HISTORY_MAX_MESSAGES);
+    expect(resolveLlmHistoryMessages(Number.POSITIVE_INFINITY)).toBe(LLM_HISTORY_MAX_MESSAGES);
+  });
+
+  it('clamps an oversized window instead of sending everything', () => {
+    expect(resolveLlmHistoryMessages(9999)).toBe(LLM_HISTORY_MAX_TURNS * 2);
+  });
+
+  it('treats zero and negatives as no memory rather than as unlimited', () => {
+    // `slice(-0)` is `slice(0)`, which would re-send the whole conversation.
+    expect(resolveLlmHistoryMessages(0)).toBe(0);
+    expect(resolveLlmHistoryMessages(-5)).toBe(0);
+    expect(trimLlmHistory(turns(6), 0)).toEqual([]);
+    expect(buildLlmMessages('sys', turns(6), '现在', 0)).toEqual([
+      { role: 'system', content: 'sys' },
+      { role: 'user', content: '现在' },
+    ]);
+  });
+
+  it('sends exactly the configured number of exchanges', () => {
+    const messages = buildLlmMessages('sys', turns(10), '现在', resolveLlmHistoryMessages(2));
+    // system + the last 2 exchanges + the new input
+    expect(messages).toHaveLength(6);
+    expect(messages[1].content).toBe('u8');
+    expect(messages[messages.length - 1]).toEqual({ role: 'user', content: '现在' });
+  });
+
+  it('drops the oldest turns as the window fills up', () => {
+    let history: ReturnType<typeof appendLlmTurn> = [];
+    for (let i = 0; i < 6; i += 1) history = appendLlmTurn(history, `u${i}`, `a${i}`, 4);
+    expect(history).toHaveLength(4);
+    expect(history[0].content).toBe('u4');
   });
 });
 

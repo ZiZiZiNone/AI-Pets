@@ -117,15 +117,57 @@ function handleBubbleClick(): void {
   if (isTyping.value) {
     stopTypewriter();
     displayedText.value = fullText.value;
+    // Keep the reveal cursor in step with what is on screen, or the next streamed fragment
+    // would rewrite the text from the old position and cut the sentence back.
+    typedCount = Array.from(fullText.value).length;
     isTyping.value = false;
   } else {
     petStore.dismissCurrentBubble();
   }
 }
 
+/**
+ * Text the typewriter is walking toward.
+ *
+ * A ref rather than a parameter because a streamed reply grows while it is being typed: the
+ * same bubble keeps typing, it just gets a longer target.
+ */
+const targetText = ref<string>('');
+/** How many code points of `targetText` have been revealed so far. */
+let typedCount = 0;
+/** True when what is on screen arrived in fragments, so the voice pass is still owed. */
+let continuedFromStream = false;
+
+/** Say one complete sentence: either the clip the action carried, or the configured voice. */
+function speakCurrentReply(text: string): void {
+  const activeTask = petStore.currentAction;
+  if (activeTask?.audioUrl) {
+    void globalLipSync.playAudioWithLipSync(activeTask.audioUrl, (frame) => {
+      petStore.broadcastLipSync(frame);
+    });
+    return;
+  }
+  void speakWithConfiguredVoice(text, Array.from(text).length);
+}
+
+function stepTypewriter(): void {
+  const chars = Array.from(targetText.value);
+  if (typedCount < chars.length) {
+    typedCount += 1;
+    displayedText.value = chars.slice(0, typedCount).join('');
+    typewriterTimer = window.setTimeout(stepTypewriter, TYPEWRITER_MS_PER_CHAR);
+    return;
+  }
+  isTyping.value = false;
+  typewriterTimer = null;
+}
+
 function startTypewriter(text: string): void {
   stopTypewriter();
+  continuedFromStream = false;
+  targetText.value = text;
   if (!text) {
+    typedCount = 0;
     displayedText.value = '';
     isTyping.value = false;
     globalLipSync.stop((frame) => {
@@ -134,32 +176,24 @@ function startTypewriter(text: string): void {
     return;
   }
 
+  typedCount = 0;
   displayedText.value = '';
   isTyping.value = true;
-  let index = 0;
-  const chars = Array.from(text);
+  speakCurrentReply(text);
+  stepTypewriter();
+}
 
-  const activeTask = petStore.currentAction;
-  if (activeTask?.audioUrl) {
-    void globalLipSync.playAudioWithLipSync(activeTask.audioUrl, (frame) => {
-      petStore.broadcastLipSync(frame);
-    });
-  } else {
-    void speakWithConfiguredVoice(text, chars.length);
-  }
-
-  const step = () => {
-    if (index < chars.length) {
-      displayedText.value += chars[index];
-      index++;
-      typewriterTimer = window.setTimeout(step, TYPEWRITER_MS_PER_CHAR);
-    } else {
-      isTyping.value = false;
-      typewriterTimer = null;
-    }
-  };
-
-  step();
+/**
+ * Take a longer target without clearing what is already on screen.
+ *
+ * Used only while a reply is streaming. Restarting the typewriter here would make every
+ * fragment rewind the sentence to zero characters.
+ */
+function continueTypewriter(text: string): void {
+  continuedFromStream = true;
+  targetText.value = text;
+  isTyping.value = true;
+  if (typewriterTimer === null) stepTypewriter();
 }
 
 function stopTypewriter(): void {
@@ -226,10 +260,30 @@ async function handleQuickReply(action: PetActionConfig): Promise<void> {
 
 watch(
   fullText,
-  (newVal) => {
+  (newVal, oldVal) => {
+    // While a reply is streaming every fragment arrives as a *longer* version of the text
+    // already on screen. That is a continuation, not a new sentence: keep typing, and stay
+    // silent — the voice would otherwise restart the sentence on every token.
+    if (petStore.replyStreaming && typeof oldVal === 'string' && newVal.startsWith(oldVal)) {
+      continueTypewriter(newVal);
+      return;
+    }
     startTypewriter(newVal);
   },
   { immediate: true }
+);
+
+watch(
+  () => petStore.replyStreaming,
+  (now, before) => {
+    if (now || !before) return;
+    // The fragments stopped arriving: this is the one moment the finished sentence may be
+    // spoken. A reply that never streamed is handled by `startTypewriter` instead, so it
+    // must not be spoken a second time here.
+    if (!continuedFromStream) return;
+    continueTypewriter(fullText.value);
+    speakCurrentReply(fullText.value);
+  }
 );
 
 onBeforeUnmount(() => {

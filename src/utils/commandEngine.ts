@@ -16,6 +16,7 @@ import { buildPetSystemPrompt } from '@/utils/petPersona';
 import {
   isLlmConfigUsable,
   sendLlmChat,
+  sendLlmChatStream,
   type LlmChatMessage,
   type LlmProviderConfig,
 } from '@/utils/llmProviders';
@@ -170,7 +171,7 @@ export function generatePersonaDialogue(
 }
 
 /**
- * How much conversation the model is shown.
+ * How much conversation the model is shown by default.
  *
  * Bounded rather than unlimited because every turn is re-sent with each request: an
  * unbounded history makes each reply slower and more expensive than the last, and a pet
@@ -182,8 +183,31 @@ export const LLM_HISTORY_MAX_MESSAGES = 8;
 /** Longest single turn kept verbatim; pasted logs are truncated rather than re-sent whole. */
 export const LLM_HISTORY_MAX_CHARS = 500;
 
-export function trimLlmHistory(history: readonly LlmChatMessage[]): LlmChatMessage[] {
-  return history.slice(-LLM_HISTORY_MAX_MESSAGES).map((message) => ({
+/** Default exchange window, in turns, for a config that has never been edited. */
+export const LLM_HISTORY_DEFAULT_TURNS = LLM_HISTORY_MAX_MESSAGES / 2;
+
+/** Ceiling for the user-configurable window, so a typo cannot re-send a whole session. */
+export const LLM_HISTORY_MAX_TURNS = 20;
+
+/**
+ * Turn a configured exchange count into a message count.
+ *
+ * Anything unusable — missing (a config saved before the field existed), negative, NaN —
+ * resolves to the default rather than to "unbounded", because `slice(-NaN)` and `slice(-0)`
+ * both mean `slice(0)`: the bug would not be an error, it would be silently re-sending the
+ * entire conversation on every request.
+ */
+export function resolveLlmHistoryMessages(turns?: number): number {
+  if (typeof turns !== 'number' || !Number.isFinite(turns)) return LLM_HISTORY_MAX_MESSAGES;
+  const whole = Math.floor(turns);
+  if (whole <= 0) return 0;
+  return Math.min(whole, LLM_HISTORY_MAX_TURNS) * 2;
+}
+
+/** The last `maxMessages` entries, each capped in length. `0` means no memory at all. */
+function tailOf(history: readonly LlmChatMessage[], maxMessages: number): LlmChatMessage[] {
+  if (maxMessages <= 0) return [];
+  return history.slice(-maxMessages).map((message) => ({
     role: message.role,
     content:
       message.content.length > LLM_HISTORY_MAX_CHARS
@@ -192,30 +216,54 @@ export function trimLlmHistory(history: readonly LlmChatMessage[]): LlmChatMessa
   }));
 }
 
+export function trimLlmHistory(
+  history: readonly LlmChatMessage[],
+  maxMessages: number = LLM_HISTORY_MAX_MESSAGES
+): LlmChatMessage[] {
+  return tailOf(history, maxMessages);
+}
+
 /** Append one exchange, dropping the oldest turns so the window stays bounded. */
 export function appendLlmTurn(
   history: readonly LlmChatMessage[],
   userInput: string,
-  reply: string
+  reply: string,
+  maxMessages: number = LLM_HISTORY_MAX_MESSAGES
 ): LlmChatMessage[] {
-  return trimLlmHistory([
-    ...history,
-    { role: 'user', content: userInput },
-    { role: 'assistant', content: reply },
-  ]);
+  return tailOf(
+    [
+      ...history,
+      { role: 'user', content: userInput },
+      { role: 'assistant', content: reply },
+    ],
+    maxMessages
+  );
 }
 
 /** Compose the request: character brief first, then the remembered turns, then input. */
 export function buildLlmMessages(
   systemPrompt: string,
   history: readonly LlmChatMessage[],
-  userInput: string
+  userInput: string,
+  maxMessages: number = LLM_HISTORY_MAX_MESSAGES
 ): LlmChatMessage[] {
   return [
     { role: 'system', content: systemPrompt },
-    ...trimLlmHistory(history),
+    ...tailOf(history, maxMessages),
     { role: 'user', content: userInput },
   ];
+}
+
+/** The provider-facing view of the bridge config, shared by the buffered and streamed paths. */
+function toProviderConfig(llmConfig: LlmBridgeConfig): LlmProviderConfig {
+  return {
+    provider: llmConfig.provider,
+    apiUrl: llmConfig.apiUrl,
+    apiKey: llmConfig.apiKey,
+    model: llmConfig.model,
+    temperature: llmConfig.temperature,
+    maxTokens: llmConfig.maxTokens,
+  };
 }
 
 export async function requestLlmCompletion(
@@ -224,18 +272,16 @@ export async function requestLlmCompletion(
   llmConfig: LlmBridgeConfig,
   history: readonly LlmChatMessage[] = []
 ): Promise<string | null> {
-  const providerConfig: LlmProviderConfig = {
-    provider: llmConfig.provider,
-    apiUrl: llmConfig.apiUrl,
-    apiKey: llmConfig.apiKey,
-    model: llmConfig.model,
-    temperature: llmConfig.temperature,
-    maxTokens: llmConfig.maxTokens,
-  };
+  const providerConfig = toProviderConfig(llmConfig);
   if (!isLlmConfigUsable(providerConfig)) return null;
 
   return sendLlmChat(
-    buildLlmMessages(buildPetSystemPrompt(pet, llmConfig.customSystemPrompt), history, input),
+    buildLlmMessages(
+      buildPetSystemPrompt(pet, llmConfig.customSystemPrompt),
+      history,
+      input,
+      resolveLlmHistoryMessages(llmConfig.historyTurns)
+    ),
     providerConfig
   );
 }
@@ -395,12 +441,42 @@ function announceCalc(petStore: PetStore, expression: string): void {
 
 async function respondWithPersona(petStore: PetStore, input: string): Promise<void> {
   const petId = petStore.currentPet?.id ?? '';
-  const llmReply = await requestLlmCompletion(
-    input,
-    petStore.currentPet,
-    petStore.llmConfig,
-    petStore.llmHistoryFor(petId)
-  );
+  const history = petStore.llmHistoryFor(petId);
+  const maxMessages = resolveLlmHistoryMessages(petStore.llmConfig.historyTurns);
+
+  // Only the stage window streams into a bubble. The companion window owns no bubble of its
+  // own — its reply is relayed to the stage as one piece — so streaming there would mean
+  // pushing half-sentences across the bus for no visible gain.
+  const streamId =
+    petStore.windowRole === 'main' && petStore.llmConfig.stream
+      ? petStore.beginStreamedReply()
+      : null;
+  let streamed = '';
+
+  let llmReply: string | null;
+  if (streamId) {
+    llmReply = await sendLlmChatStream(
+      buildLlmMessages(
+        buildPetSystemPrompt(petStore.currentPet, petStore.llmConfig.customSystemPrompt),
+        history,
+        input,
+        maxMessages
+      ),
+      toProviderConfig(petStore.llmConfig),
+      (delta) => {
+        streamed += delta;
+        petStore.pushStreamedText(streamId, streamed);
+      }
+    );
+  } else {
+    llmReply = await requestLlmCompletion(
+      input,
+      petStore.currentPet,
+      petStore.llmConfig,
+      history
+    );
+  }
+
   if (llmReply) {
     // Only real model turns are remembered. Recording the offline fallbacks as well would
     // feed canned lines back to the model as if the pet had written them, and the next
@@ -409,11 +485,19 @@ async function respondWithPersona(petStore: PetStore, input: string): Promise<vo
   }
   const reply =
     llmReply || generatePersonaDialogue(input, petStore.currentPet, petStore.stats);
+  const durationMs = bubbleMsForText(reply);
+
+  if (streamId) {
+    // The last fragment already put this text on screen, so ending here neither re-types the
+    // sentence nor leaves the bubble without a deadline.
+    petStore.endStreamedReply(streamId, reply, durationMs);
+    return;
+  }
   petStore.scheduleAction({
     priority: 'P1',
     motion: 'happy',
     expression: 'smile',
     text: reply,
-    durationMs: bubbleMsForText(reply),
+    durationMs,
   });
 }

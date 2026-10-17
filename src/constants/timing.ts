@@ -61,6 +61,15 @@ export const ALPHA_MASK_REBUILD_FRAMES = 15;
 export const DEFAULT_ACTION_DURATION_MS = 3800;
 export const MIN_ACTION_DURATION_MS = 800;
 
+/**
+ * How long a streamed reply may stay on screen while the next fragment is still in flight.
+ *
+ * Each fragment re-arms this, so it only has to cover the gap between two tokens — long
+ * enough for a slow local model, short enough that a stream that dies mid-sentence does not
+ * leave the bubble pinned forever.
+ */
+export const STREAMING_HOLD_MS = 30000;
+
 /** Speech bubble typewriter. */
 export const TYPEWRITER_MS_PER_CHAR = 24;
 export const TYPEWRITER_MAX_MS = 3600;

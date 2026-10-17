@@ -30,7 +30,13 @@ import {
   serializeHostSettingsYaml,
   serializePetManifestYaml,
 } from '@/utils/yamlLoader';
-import { appendLlmTurn, executeChatOrSlashCommand, pickDailyFortune } from '@/utils/commandEngine';
+import {
+  appendLlmTurn,
+  executeChatOrSlashCommand,
+  pickDailyFortune,
+  LLM_HISTORY_DEFAULT_TURNS,
+  resolveLlmHistoryMessages,
+} from '@/utils/commandEngine';
 import type { LlmChatMessage } from '@/utils/llmProviders';
 import {
   executeExternalSafeAction,
@@ -48,6 +54,7 @@ import {
   COMMAND_HISTORY_LIMIT,
   DEFAULT_ACTION_DURATION_MS,
   MIN_ACTION_DURATION_MS,
+  STREAMING_HOLD_MS,
   VOICE_GAIN_PERCENT_SCALE,
 } from '@/constants/timing';
 import {
@@ -82,6 +89,8 @@ const DEFAULT_LLM_CONFIG: LlmBridgeConfig = {
   apiKey: '',
   model: LLM_DEFAULT_MODEL,
   customSystemPrompt: '',
+  historyTurns: LLM_HISTORY_DEFAULT_TURNS,
+  stream: true,
 };
 
 const DEFAULT_COMMAND_HISTORY = ['/focus 25', '/fortune', '/sys'];
@@ -131,7 +140,13 @@ export const usePetStore = defineStore('petStore', () => {
   const commandHistory = ref<string[]>(
     loadStorage(STORAGE_KEYS.HISTORY, DEFAULT_COMMAND_HISTORY)
   );
-  const llmConfig = ref<LlmBridgeConfig>(loadStorage(STORAGE_KEYS.LLM, DEFAULT_LLM_CONFIG));
+  // Merged over the defaults, not replaced by the stored object: a config written before a
+  // field existed would otherwise leave that field `undefined`, and an undefined history
+  // window reads as "unbounded" rather than as "invalid".
+  const llmConfig = ref<LlmBridgeConfig>({
+    ...DEFAULT_LLM_CONFIG,
+    ...loadStorage(STORAGE_KEYS.LLM, DEFAULT_LLM_CONFIG),
+  });
   /**
    * Conversation memory, keyed by pet.
    *
@@ -321,6 +336,79 @@ export const usePetStore = defineStore('petStore', () => {
   function dismissCurrentBubble(): void {
     markUserActivity();
     advanceActionQueue();
+  }
+
+  /**
+   * Id of the bubble currently being filled in by a streamed reply, if any.
+   *
+   * Kept as an id rather than a boolean because a reply can arrive while a higher-priority
+   * action is on stage: the bubble is then still queued, and fragments must not be written
+   * into whatever bubble happens to be visible. They are held until the reply ends, and the
+   * finished sentence is shown then.
+   */
+  const streamingReplyId = ref<string | null>(null);
+
+  /** True while the text on stage is still growing; the bubble uses it to hold its voice. */
+  const replyStreaming = computed(
+    () => streamingReplyId.value !== null && currentAction.value?.id === streamingReplyId.value
+  );
+
+  /** Put up a bubble that `pushStreamedText` will fill in; returns its id. */
+  function beginStreamedReply(): string {
+    const id = `${ACTION_ID_PREFIX}${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    streamingReplyId.value = id;
+    scheduleAction({
+      id,
+      priority: 'P1',
+      motion: 'happy',
+      expression: 'smile',
+      text: '',
+      durationMs: STREAMING_HOLD_MS,
+    });
+    return id;
+  }
+
+  /** Replace the text of a streamed reply that is already on stage. */
+  function pushStreamedText(id: string, text: string): void {
+    if (streamingReplyId.value !== id || currentAction.value?.id !== id) return;
+    bubbleText.value = text;
+    currentAction.value = { ...currentAction.value, text };
+    rearmActiveAction(STREAMING_HOLD_MS);
+  }
+
+  /**
+   * Close a streamed reply.
+   *
+   * The text is only assigned when it differs from what is on screen: re-assigning the same
+   * string would retrigger the bubble's text watcher and make the finished sentence type
+   * itself out a second time from an empty bubble.
+   */
+  function endStreamedReply(id: string, text: string, durationMs: number): void {
+    const owns = streamingReplyId.value === id;
+    if (owns) streamingReplyId.value = null;
+
+    if (owns && currentAction.value?.id === id) {
+      if (bubbleText.value !== text) bubbleText.value = text;
+      rearmActiveAction(durationMs);
+      return;
+    }
+    // Queued behind something else, or replaced: behave like a normal reply.
+    scheduleAction({
+      priority: 'P1',
+      motion: 'happy',
+      expression: 'smile',
+      text,
+      durationMs,
+    });
+  }
+
+  /** Restart the countdown for the action on stage without touching its text. */
+  function rearmActiveAction(durationMs: number): void {
+    if (actionTimer !== null) clearTimeout(actionTimer);
+    actionTimer = window.setTimeout(
+      advanceActionQueue,
+      Math.max(MIN_ACTION_DURATION_MS, durationMs)
+    );
   }
 
   function addXpAndAffinity(xpDelta: number, affinityDelta = 1, moodDelta = 1): void {
@@ -573,7 +661,12 @@ export const usePetStore = defineStore('petStore', () => {
     if (!petId) return;
     llmHistory.value = {
       ...llmHistory.value,
-      [petId]: appendLlmTurn(llmHistoryFor(petId), userInput, reply),
+      [petId]: appendLlmTurn(
+        llmHistoryFor(petId),
+        userInput,
+        reply,
+        resolveLlmHistoryMessages(llmConfig.value.historyTurns)
+      ),
     };
     saveStorage(STORAGE_KEYS.LLM_HISTORY, llmHistory.value);
   }
@@ -714,6 +807,10 @@ export const usePetStore = defineStore('petStore', () => {
     switchPetById,
     scheduleAction,
     dismissCurrentBubble,
+    replyStreaming,
+    beginStreamedReply,
+    pushStreamedText,
+    endStreamedReply,
     addXpAndAffinity,
     feedPetCareItem,
     feedDefaultCareItem,

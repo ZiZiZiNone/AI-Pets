@@ -479,6 +479,16 @@ export interface LlmBridgeConfig {
   customSystemPrompt: string;
   temperature?: number;
   maxTokens?: number;
+  /**
+   * Exchanges of conversation replayed to the model. `0` disables memory.
+   *
+   * Lives here rather than in `settings.yaml` on purpose: the bridge config is already the
+   * single home of everything the gateway needs, and splitting the window size into a
+   * second file would give the two sources a way to disagree.
+   */
+  historyTurns?: number;
+  /** Ask for the reply incrementally. Gateways that refuse `stream` are retried buffered. */
+  stream?: boolean;
 }
 
 export interface SystemTelemetry {

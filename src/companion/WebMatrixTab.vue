@@ -64,6 +64,31 @@
           @focus="emit('input-focus')"
           @blur="onConfigBlur"
         />
+        <div class="llm-row-2">
+          <input
+            v-model.number="petStore.llmConfig.historyTurns"
+            type="number"
+            min="0"
+            :max="LLM_HISTORY_MAX_TURNS"
+            step="1"
+            class="matrix-url-input"
+            :placeholder="`记忆轮数 0~${LLM_HISTORY_MAX_TURNS}（0 = 不记忆）`"
+            @focus="emit('input-focus')"
+            @blur="onConfigBlur"
+          />
+          <label class="llm-enable-toggle">
+            <input
+              v-model="petStore.llmConfig.stream"
+              type="checkbox"
+              @change="petStore.saveLlmConfig({})"
+            />
+            <span>逐字流式上屏</span>
+          </label>
+        </div>
+        <div class="llm-row-2">
+          <span class="llm-memory-hint">{{ memoryHint }}</span>
+          <button class="clear-btn" @click="clearMemory">清空当前宠物记忆</button>
+        </div>
       </div>
     </div>
 
@@ -106,10 +131,11 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { usePetStore } from '@/store/petStore';
 import VoiceBridgePanel from './VoiceBridgePanel.vue';
 import { requestLlmCompletion } from '@/utils/commandEngine';
+import { LLM_HISTORY_MAX_TURNS, resolveLlmHistoryMessages } from '@/utils/commandEngine';
 import { listLlmProviders, resolveLlmProvider } from '@/utils/llmProviders';
 import type { LlmBridgeConfig } from '@/types/pet';
 import { COMPANION_STATUS_RESET_MS, LLM_REPLY_BUBBLE_MS } from '@/constants/timing';
-import { UI_TONE_LABELS } from '@/constants/messages';
+import { COMMAND_MESSAGES, UI_TONE_LABELS } from '@/constants/messages';
 
 const LLM_API_URL_PLACEHOLDERS: Record<string, string> = {
   openai_compatible: 'API 地址 (如 https://api.deepseek.com/v1/chat/completions)',
@@ -128,6 +154,19 @@ const apiKeyPlaceholder = computed(() =>
     ? 'API Key (留空则使用内置离线性格脑)'
     : '本地模型无需 Key'
 );
+
+/** How much of this pet's conversation is actually being replayed, in plain numbers. */
+const memoryHint = computed(() => {
+  const turns = Math.floor(petStore.llmHistoryFor(petStore.currentPet?.id ?? '').length / 2);
+  const window = resolveLlmHistoryMessages(petStore.llmConfig.historyTurns) / 2;
+  if (window <= 0) return `记忆已关闭（已存 ${turns} 轮不会被发送）`;
+  return `当前宠物已记 ${turns} 轮，每次发送最近 ${Math.min(turns, window)} 轮`;
+});
+
+function clearMemory(): void {
+  const cleared = petStore.clearLlmHistory(petStore.currentPet?.id ?? '');
+  emit('log', COMMAND_MESSAGES.historyCleared(cleared));
+}
 
 const props = defineProps<{
   initialUrl?: string;
