@@ -104,9 +104,11 @@ import FocusTodoTab from './FocusTodoTab.vue';
 import CareFleetTab from './CareFleetTab.vue';
 import WebMatrixTab from './WebMatrixTab.vue';
 import { usePetStore } from '@/store/petStore';
-import type { SduiSchema, SduiWidget, SystemTelemetry } from '@/types/pet';
-import { COMPANION_LOG_LIMIT, POD_NUDGE_LIMIT_PX } from '@/constants/timing';
+import type { SduiSchema, SduiSettingEffect, SduiWidget, SystemTelemetry } from '@/types/pet';
+import { COMPANION_LOG_LIMIT, HUD_ANIMATION_BOX, POD_NUDGE_LIMIT_PX, VOICE_GAIN_PERCENT_SCALE } from '@/constants/timing';
 import { formatMemoryMb } from '@/constants/messages';
+import { declaredSettingEffect, readSduiSettingValue } from '@/utils/sduiEffects';
+import { DEFAULT_RMS_GAIN } from '@/utils/yamlLoader';
 
 /**
  * Writes a remote value into a widget without widening the discriminated union.
@@ -166,6 +168,7 @@ const activeSchema = ref<SduiSchema>({
       label: '前景窗口标题栏磁吸攀爬',
       description: '拖拽靠近活动窗口顶部时自动产生磁吸驻留',
       value: true,
+      effect: { kind: 'setting', setting: 'window_climbing' },
     },
     {
       id: 'enable_click_through',
@@ -173,6 +176,7 @@ const activeSchema = ref<SduiSchema>({
       label: '全局物理鼠标穿透模式',
       description: '开启后宠物窗口完全不拦截鼠标点击',
       value: false,
+      effect: { kind: 'setting', setting: 'click_through' },
     },
     {
       id: 'enable_tts',
@@ -180,6 +184,7 @@ const activeSchema = ref<SduiSchema>({
       label: '语音合成播报 (TTS)',
       description: '弹出对话气泡时朗读文本；用哪种声音在「🌐 网页与AI脑桥」的语音桥里选',
       value: true,
+      effect: { kind: 'setting', setting: 'tts' },
     },
     {
       id: 'fps_mode',
@@ -191,6 +196,7 @@ const activeSchema = ref<SduiSchema>({
         { label: '全功率超频 (锁定 60 FPS)', value: '60' },
         { label: '静默巡航 (锁定 30 FPS)', value: '30' },
       ],
+      effect: { kind: 'setting', setting: 'fps_mode' },
     },
     {
       id: 'voice_gain',
@@ -201,15 +207,50 @@ const activeSchema = ref<SduiSchema>({
       max: 200,
       step: 5,
       unit: '%',
+      effect: { kind: 'setting', setting: 'voice_gain' },
     },
     {
       id: 'quick_cmds',
       type: 'button_group',
       label: '空间战术指令矩阵',
       buttons: [
-        { id: 'btn_test_bubble', label: '全息脉冲播报', variant: 'primary' },
-        { id: 'btn_test_hud', label: '投射AR雷达', variant: 'secondary' },
-        { id: 'btn_clear_hud', label: '静默清除HUD', variant: 'danger' },
+        {
+          id: 'btn_test_bubble',
+          label: '全息脉冲播报',
+          variant: 'primary',
+          effect: { kind: 'say', text: '外部神经链路握手成功！伴生舱已就绪。' },
+        },
+        {
+          id: 'btn_test_hud',
+          label: '投射AR雷达',
+          variant: 'secondary',
+          effect: {
+            kind: 'hud_draw',
+            annotations: [
+              {
+                id: 'demo_hud_box',
+                app_id: 'host_builtin_panel',
+                type: 'box',
+                x: HUD_ANIMATION_BOX.x,
+                y: HUD_ANIMATION_BOX.y,
+                w: HUD_ANIMATION_BOX.w,
+                h: HUD_ANIMATION_BOX.h,
+                // No colour: the HUD layer falls back to its own accent, which is the same
+                // thing every external annotation gets. A panel that wants its own colour
+                // writes one here.
+                label: '🎯 空间战术锁定 // SECTOR-01',
+                sublabel: 'AR 雷达环绕投影 (100% 物理鼠标穿透)',
+                countdownSec: HUD_ANIMATION_BOX.countdownSec,
+              },
+            ],
+          },
+        },
+        {
+          id: 'btn_clear_hud',
+          label: '静默清除HUD',
+          variant: 'danger',
+          effect: { kind: 'hud_clear' },
+        },
       ],
     },
     {
@@ -237,20 +278,37 @@ const podTetherPaths = computed<string[]>(() => {
   });
 });
 
+/**
+ * The host's current values for everything a `setting` effect can write, in the units the
+ * panel shows.
+ *
+ * Built by name so a widget's declared setting indexes straight into it: a panel that adds
+ * `effect: { kind: 'setting', setting: 'tts' }` to its own switch gets a correct initial
+ * position without the renderer knowing what that switch is called. `voice_gain` is a
+ * percentage here because that is what the slider edits; the store keeps the raw multiplier.
+ */
+const liveSettings = computed<Record<SduiSettingEffect, unknown>>(() => ({
+  window_climbing: petStore.settings.behavior.enable_window_climbing,
+  click_through: petStore.is_click_through,
+  tts: petStore.settings.audio.enable_tts,
+  fps_mode: petStore.fpsOverride,
+  voice_gain: Math.round(
+    (petStore.settings.audio.rms_gain || DEFAULT_RMS_GAIN) * VOICE_GAIN_PERCENT_SCALE
+  ),
+}));
+
 function syncWidgetsFromLiveState(telemetry?: SystemTelemetry): void {
   for (const w of activeSchema.value.widgets) {
     if (w.id === 'host_status' && w.type === 'status_badge' && telemetry) {
+      // The bus address is not a widget setting; only this panel shows it.
       w.value = `ONLINE // :${telemetry.ws_port} (${telemetry.connected_clients} CONN)`;
-    } else if (w.id === 'enable_climb' && w.type === 'switch') {
-      w.value = petStore.settings.behavior.enable_window_climbing;
-    } else if (w.id === 'enable_click_through' && w.type === 'switch') {
-      w.value = petStore.is_click_through;
-    } else if (w.id === 'enable_tts' && w.type === 'switch') {
-      w.value = petStore.settings.audio.enable_tts;
-    } else if (w.id === 'fps_mode' && w.type === 'select') {
-      w.value = petStore.fpsOverride;
-    } else if (w.id === 'voice_gain' && w.type === 'slider') {
-      w.value = Math.round((petStore.settings.audio.rms_gain || 3.2) * 25);
+      continue;
+    }
+    const setting = declaredSettingEffect(w);
+    if (!setting || !('value' in w)) continue;
+    const live = readSduiSettingValue(setting, liveSettings.value);
+    if (typeof live === 'boolean' || typeof live === 'string' || typeof live === 'number') {
+      w.value = live;
     }
   }
 }

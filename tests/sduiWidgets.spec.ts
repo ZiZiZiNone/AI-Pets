@@ -103,4 +103,34 @@ describe('SDUI widget surface', () => {
     const html = await renderWidgets([]);
     expect(html).toContain('spatial-pods-stream');
   });
+
+  it('says so when a widget type is one the host does not render', async () => {
+    // A schema is data, so `type` can be any string a panel author typed. Before this the
+    // card rendered empty: a panel could tell a host that is too old from one that never
+    // received the value only by guessing.
+    const html = await renderWidgets([
+      { id: 'w1', type: 'holo_orb' } as unknown as SduiWidget,
+    ]);
+    expect(html).toContain('未知控件类型');
+    expect(html).toContain('holo_orb');
+    // The notice has to name the supported set, otherwise the author is left with the
+    // problem and no next step.
+    expect(html).toContain('text_input');
+  });
+
+  it('carries a declared effect through to the rendered control', async () => {
+    // The effect is what replaced the renderer's id list, so a control is only usable by a
+    // third-party panel if the field survives rendering alongside it.
+    const html = await renderWidgets([
+      {
+        id: 'anything',
+        type: 'switch',
+        label: '语音播报',
+        value: true,
+        effect: { kind: 'setting', setting: 'tts' },
+      },
+    ]);
+    expect(html).toContain('语音播报');
+    expect(html).toContain('cyber-switch');
+  });
 });

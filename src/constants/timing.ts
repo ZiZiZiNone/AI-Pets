@@ -161,6 +161,14 @@ export const LLM_REPLY_BUBBLE_MS = 4500;
  */
 export const PET_SWITCH_FAILURE_MS = 6000;
 
+/**
+ * How long a bubble raised by a panel's `say` effect stays up.
+ *
+ * The default for a scheduled action is longer than a panel button's acknowledgement needs;
+ * a panel that wants a different window can set `durationMs` on the effect.
+ */
+export const SDUI_SAY_DURATION_MS = 3600;
+
 /** Radial menu geometry. */
 export const RADIAL_MENU_RADIUS_X_PX = 122;
 export const RADIAL_MENU_RADIUS_Y_PX = 114;

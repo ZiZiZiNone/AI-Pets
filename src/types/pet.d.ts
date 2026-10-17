@@ -201,6 +201,42 @@ export interface HudAnnotation {
   createdAt?: number;
 }
 
+/**
+ * Stage frame-rate override, as a value rather than a number so `dynamic` can be spelled.
+ *
+ * Shared rather than declared where it is used because a panel can set it from a schema and
+ * the store applies it, and both sides have to agree on the three legal strings.
+ */
+export type PetFpsOverride = 'dynamic' | '60' | '30';
+
+/** Host settings a panel may write through a widget's own value. */
+export type SduiSettingEffect =
+  | 'window_climbing'
+  | 'click_through'
+  | 'tts'
+  | 'fps_mode'
+  | 'voice_gain';
+
+/**
+ * Something the host should do when a panel control is used.
+ *
+ * Declared in the schema rather than inferred from the widget's id. The renderer used to
+ * compare ids against a list compiled into it, which meant a panel shipped by anyone else
+ * had controls that looked live and did nothing, with no way to find out why.
+ *
+ * The set is closed on purpose: a panel is data from outside the app, so "run this arbitrary
+ * thing on the host" would be a capability, not an extension point.
+ */
+export type SduiEffect =
+  /** Write the control's value into the named host setting. */
+  | { kind: 'setting'; setting: SduiSettingEffect }
+  /** Show a bubble on the stage; without `text`, the control's own string value is used. */
+  | { kind: 'say'; text?: string; durationMs?: number }
+  /** Draw these annotations on the HUD overlay. */
+  | { kind: 'hud_draw'; annotations: HudAnnotation[] }
+  /** Clear every annotation on the HUD overlay. */
+  | { kind: 'hud_clear' };
+
 export type SduiWidget =
   | {
       id: string;
@@ -215,6 +251,7 @@ export type SduiWidget =
       label: string;
       description?: string;
       value: boolean;
+      effect?: SduiEffect;
     }
   | {
       id: string;
@@ -222,6 +259,7 @@ export type SduiWidget =
       label: string;
       value: string;
       options: Array<{ label: string; value: string }>;
+      effect?: SduiEffect;
     }
   | {
       id: string;
@@ -232,6 +270,7 @@ export type SduiWidget =
       max: number;
       step?: number;
       unit?: string;
+      effect?: SduiEffect;
     }
   | {
       id: string;
@@ -241,6 +280,7 @@ export type SduiWidget =
         id: string;
         label: string;
         variant?: 'primary' | 'secondary' | 'danger';
+        effect?: SduiEffect;
       }>;
     }
   | {
@@ -267,6 +307,7 @@ export type SduiWidget =
       multiline?: boolean;
       /** Adds a button that raises `panel.text_submitted` in addition to `panel.state_changed`. */
       submit_label?: string;
+      effect?: SduiEffect;
     };
 
 export interface SduiSchema {

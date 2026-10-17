@@ -112,6 +112,15 @@ export const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
   },
 };
 
+/**
+ * Lip-sync gain used until `audio.rms_gain` is read from `settings.yaml`.
+ *
+ * Named because two other places need the same fallback — the value that drives the
+ * analyser and the value a panel's voice-gain control shows — and a second literal would
+ * let the slider and the mouth disagree about what "80%" means.
+ */
+export const DEFAULT_RMS_GAIN = 3.2;
+
 export const DEFAULT_HOST_SETTINGS: HostSettings = {
   host: {
     ws_port_range: [9527, 9537],
@@ -138,7 +147,7 @@ export const DEFAULT_HOST_SETTINGS: HostSettings = {
   audio: {
     enable_lip_sync: true,
     rms_smoothing: 0.75,
-    rms_gain: 3.2,
+    rms_gain: DEFAULT_RMS_GAIN,
     enable_tts: false,
     ...structuredClone(DEFAULT_VOICE_SETTINGS),
   },

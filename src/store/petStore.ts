@@ -14,6 +14,7 @@ import type {
   PetActionConfig,
   PetManifest,
   PetStatsState,
+  PetFpsOverride,
   PetSwitchOutcome,
   PetThemePalette,
   PomodoroState,
@@ -23,6 +24,7 @@ import type {
 } from '@/types/pet';
 import {
   DEFAULT_HOST_SETTINGS,
+  DEFAULT_RMS_GAIN,
   FALLBACK_PET_MANIFEST,
   fetchWebFallbackBundle,
   parseGlobalMenuYaml,
@@ -72,7 +74,6 @@ import type { AudioPrefs, CarePresenter } from './carePresenter';
 import { resolvePetTheme, themeToCssVars } from './themes';
 
 type WindowRole = 'main' | 'companion';
-type FpsOverride = 'dynamic' | '60' | '30';
 
 const STAGE_CHANNEL_NAME = 'desktop_pet_stage_bus';
 const PRIORITY_RANK: Record<ActionPriority, number> = { P0: 4, P1: 3, P2: 2, P3: 1 };
@@ -138,7 +139,7 @@ export const usePetStore = defineStore('petStore', () => {
     bands: [0, 0, 0, 0, 0, 0, 0],
   });
   const lastUserActivityAt = ref(Date.now());
-  const fpsOverride = ref<FpsOverride>('dynamic');
+  const fpsOverride = ref<PetFpsOverride>('dynamic');
   const commandHistory = ref<string[]>(
     loadStorage(STORAGE_KEYS.HISTORY, DEFAULT_COMMAND_HISTORY)
   );
@@ -219,7 +220,7 @@ export const usePetStore = defineStore('petStore', () => {
 
   function applyAudioSettings(): void {
     globalLipSync.setGainMultiplier(
-      (settings.value.audio.rms_gain || 3.2) * VOICE_GAIN_PERCENT_SCALE
+      (settings.value.audio.rms_gain || DEFAULT_RMS_GAIN) * VOICE_GAIN_PERCENT_SCALE
     );
     globalLipSync.setRmsSmoothing(settings.value.audio.rms_smoothing || 0.75);
   }
@@ -725,7 +726,7 @@ export const usePetStore = defineStore('petStore', () => {
     }
   }
 
-  function setFpsOverride(next: FpsOverride): void {
+  function setFpsOverride(next: PetFpsOverride): void {
     fpsOverride.value = next;
     stageBus?.postMessage({ fpsOverride: next });
   }

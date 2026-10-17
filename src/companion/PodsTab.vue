@@ -101,7 +101,7 @@
               :key="btn.id"
               class="cyber-action-btn"
               :class="btn.variant || 'secondary'"
-              @click="handleButtonClick(widget.id, btn.id, btn.label)"
+              @click="handleButtonClick(widget.id, btn)"
             >
               {{ btn.label }}
             </button>
@@ -149,6 +149,19 @@
             </div>
           </div>
         </div>
+
+        <div v-else class="pod-col">
+          <!--
+            A schema is data, so `type` can be anything at all. Falling through to nothing
+            left a blank card with no explanation; this says which type it was, so a panel
+            author can tell a host that is too old from one that never got the value.
+          -->
+          <span class="pod-label">未知控件类型</span>
+          <span class="pod-desc">
+            宿主未渲染 [{{ unknownWidgetType(widget) }}]：本版本的控件类型只有
+            status_badge / switch / select / slider / button_group / text_input / log_viewer。
+          </span>
+        </div>
       </div>
     </div>
   </main>
@@ -160,9 +173,9 @@ import { invoke } from '@tauri-apps/api/core';
 import { emit as tauriEmit } from '@tauri-apps/api/event';
 import { usePetStore } from '@/store/petStore';
 import { globalLipSync } from '@/utils/audioLipSync';
-import type { SduiSchema, SduiWidget } from '@/types/pet';
-import { HUD_ANIMATION_BOX, POD_NUDGE_STEP_PX, VOICE_GAIN_PERCENT_SCALE } from '@/constants/timing';
-import { STAGE_MESSAGES } from '@/constants/messages';
+import type { SduiEffect, SduiSchema, SduiWidget } from '@/types/pet';
+import { POD_NUDGE_STEP_PX, SDUI_SAY_DURATION_MS } from '@/constants/timing';
+import { planSduiEffect, type SduiEffectCommand } from '@/utils/sduiEffects';
 
 const props = defineProps<{
   schema: SduiSchema;
@@ -199,6 +212,18 @@ function sliderPercent(widget: Extract<SduiWidget, { type: 'slider' }>): number 
   return Math.min(100, Math.max(0, ((widget.value - widget.min) / span) * 100));
 }
 
+/**
+ * Name a widget type the host does not render.
+ *
+ * The else branch is unreachable through the type system — `SduiWidget` is a closed union
+ * and every member is handled above — which is exactly why it needs a body: a schema is
+ * data, and the value in `type` can be any string the panel author typed.
+ */
+function unknownWidgetType(widget: SduiWidget): string {
+  const raw = (widget as { type?: unknown } | null)?.type;
+  return typeof raw === 'string' ? raw : JSON.stringify(raw ?? widget);
+}
+
 async function notifyHost(method: string, params: Record<string, unknown>): Promise<void> {
   try {
     await invoke('ws_send_event', {
@@ -211,30 +236,69 @@ async function notifyHost(method: string, params: Record<string, unknown>): Prom
   }
 }
 
-async function applyWidgetSideEffect(widgetId: string, value: unknown): Promise<void> {
-  if (widgetId === 'enable_climb' && typeof value === 'boolean') {
-    petStore.settings.behavior.enable_window_climbing = value;
-    await petStore.saveHostSettings();
-  } else if (widgetId === 'enable_click_through' && typeof value === 'boolean') {
-    await petStore.dispatchPatch({ is_click_through: value });
-  } else if (widgetId === 'enable_tts' && typeof value === 'boolean') {
-    petStore.settings.audio.enable_tts = value;
-    await petStore.saveHostSettings();
-  } else if (widgetId === 'fps_mode' && typeof value === 'string') {
-    petStore.setFpsOverride(value as 'dynamic' | '60' | '30');
-  } else if (widgetId === 'voice_gain' && typeof value === 'number') {
-    petStore.settings.audio.rms_gain = Number(
-      (value / VOICE_GAIN_PERCENT_SCALE).toFixed(2)
-    );
-    // Apply locally too: the bus only reaches the stage window, not this context.
-    globalLipSync.setGainMultiplier(value);
-    await petStore.saveHostSettings();
+async function applyWidgetSideEffect(
+  effect: SduiEffect | undefined,
+  value: unknown,
+  subject: string
+): Promise<void> {
+  for (const command of planSduiEffect(effect, value)) {
+    await runEffectCommand(command, subject);
   }
 }
 
-async function commitWidget(widgetId: string, value: unknown): Promise<void> {
+async function runEffectCommand(command: SduiEffectCommand, subject: string): Promise<void> {
+  switch (command.type) {
+    case 'set_window_climbing':
+      petStore.settings.behavior.enable_window_climbing = command.value;
+      await petStore.saveHostSettings();
+      return;
+    case 'set_click_through':
+      await petStore.dispatchPatch({ is_click_through: command.value });
+      return;
+    case 'set_tts':
+      petStore.settings.audio.enable_tts = command.value;
+      await petStore.saveHostSettings();
+      return;
+    case 'set_fps_override':
+      petStore.setFpsOverride(command.value);
+      return;
+    case 'set_voice_gain':
+      petStore.settings.audio.rms_gain = command.rmsGain;
+      // Apply locally too: the bus only reaches the stage window, not this context.
+      globalLipSync.setGainMultiplier(command.percent);
+      await petStore.saveHostSettings();
+      return;
+    case 'say':
+      petStore.scheduleAction({
+        priority: 'P2',
+        motion: 'happy',
+        expression: 'smile',
+        text: command.text,
+        durationMs: command.durationMs || SDUI_SAY_DURATION_MS,
+      });
+      return;
+    case 'hud_draw':
+      await tauriEmit('hud-draw', { annotations: command.annotations });
+      return;
+    case 'hud_clear':
+      await tauriEmit('hud-clear', {});
+      return;
+    case 'unsupported':
+      // Readable degradation instead of a silent no-op: the panel's own console says what
+      // the schema asked for and why the host could not do it.
+      emit('log', `[未执行] ${subject}: ${command.reason}`);
+      return;
+  }
+}
+
+async function commitWidget(
+  effect: SduiEffect | undefined,
+  widgetId: string,
+  value: unknown,
+  subject: string
+): Promise<void> {
   emit('log', `[SYNAPSE SYNC] ${widgetId} => ${JSON.stringify(value)}`);
-  await applyWidgetSideEffect(widgetId, value);
+  await applyWidgetSideEffect(effect, value, subject);
   await notifyHost('panel.state_changed', { widget_id: widgetId, value });
 }
 
@@ -242,7 +306,7 @@ async function handleSwitchToggle(
   widget: Extract<SduiWidget, { type: 'switch' }>
 ): Promise<void> {
   widget.value = !widget.value;
-  await commitWidget(widget.id, widget.value);
+  await commitWidget(widget.effect, widget.id, widget.value, `开关 ${widget.label}`);
 }
 
 async function handleSelectChange(
@@ -250,7 +314,7 @@ async function handleSelectChange(
   newValue: string
 ): Promise<void> {
   widget.value = newValue;
-  await commitWidget(widget.id, newValue);
+  await commitWidget(widget.effect, widget.id, newValue, `下拉 ${widget.label}`);
 }
 
 async function handleSliderChange(
@@ -258,7 +322,7 @@ async function handleSliderChange(
   newValue: number
 ): Promise<void> {
   widget.value = newValue;
-  await commitWidget(widget.id, newValue);
+  await commitWidget(widget.effect, widget.id, newValue, `滑杆 ${widget.label}`);
 }
 
 /**
@@ -277,53 +341,26 @@ function clampSduiText(value: string): string {
 
 async function commitTextInput(widget: TextInputWidget): Promise<void> {
   widget.value = clampSduiText(widget.value);
-  await commitWidget(widget.id, widget.value);
+  await commitWidget(widget.effect, widget.id, widget.value, `文本框 ${widget.label}`);
 }
 
 async function submitTextInput(widget: TextInputWidget): Promise<void> {
   widget.value = clampSduiText(widget.value);
   emit('log', `[SUBMIT] ${widget.label} => ${widget.value}`);
-  await applyWidgetSideEffect(widget.id, widget.value);
+  await applyWidgetSideEffect(widget.effect, widget.value, `文本框 ${widget.label}`);
   await notifyHost('panel.text_submitted', { widget_id: widget.id, value: widget.value });
 }
 
 async function handleButtonClick(
   widgetId: string,
-  buttonId: string,
-  label: string
+  button: Extract<SduiWidget, { type: 'button_group' }>['buttons'][number]
 ): Promise<void> {
-  emit('log', `[TRIGGER] ${label} (${buttonId})`);
-
-  if (buttonId === 'btn_test_bubble') {
-    petStore.scheduleAction({
-      priority: 'P2',
-      motion: 'happy',
-      expression: 'smile',
-      text: STAGE_MESSAGES.companionWoken,
-      durationMs: 3600,
-    });
-  } else if (buttonId === 'btn_test_hud') {
-    await tauriEmit('hud-draw', {
-      annotations: [
-        {
-          id: 'demo_hud_box',
-          app_id: 'host_builtin_panel',
-          type: 'box',
-          x: HUD_ANIMATION_BOX.x,
-          y: HUD_ANIMATION_BOX.y,
-          w: HUD_ANIMATION_BOX.w,
-          h: HUD_ANIMATION_BOX.h,
-          color: petStore.activeTheme.primary,
-          label: '🎯 空间战术锁定 // SECTOR-01',
-          sublabel: 'AR 雷达环绕投影 (100% 物理鼠标穿透)',
-          countdownSec: HUD_ANIMATION_BOX.countdownSec,
-        },
-      ],
-    });
-  } else if (buttonId === 'btn_clear_hud') {
-    await tauriEmit('hud-clear', {});
-  }
-
-  await notifyHost('panel.button_clicked', { widget_id: widgetId, button_id: buttonId, label });
+  emit('log', `[TRIGGER] ${button.label} (${button.id})`);
+  await applyWidgetSideEffect(button.effect, button.label, `按钮 ${button.label}`);
+  await notifyHost('panel.button_clicked', {
+    widget_id: widgetId,
+    button_id: button.id,
+    label: button.label,
+  });
 }
 </script>
