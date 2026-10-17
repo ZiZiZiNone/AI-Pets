@@ -1,0 +1,90 @@
+name: Release
+
+# 任何人都应能在 GitHub 上直接下载安装包，而不必在本机安装 Rust 与 MSVC 工具链。
+# GitHub 托管的 windows runner 预装了 MSVC Build Tools，因此这里的构建结果就是"标准构建"。
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '要发布的版本标签，例如 v2.0.0'
+        required: true
+        default: 'v2.0.0'
+      ref:
+        description: '从哪个分支或提交发布'
+        required: false
+        default: 'main'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  # 创建 Release 与上传附件所必需。
+  contents: write
+
+env:
+  TAG: ${{ inputs.tag || github.ref_name }}
+
+jobs:
+  release:
+    name: Build installers and publish
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # 标签推送时用该标签；手动触发时用 inputs.ref（例如 main）。
+          ref: ${{ inputs.ref || github.ref }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # windows runner 自带 MSVC Build Tools，无需本地安装 MinGW。
+      - uses: dtolnay/rust-toolchain@stable
+
+      - run: npm ci --no-audit --no-fund
+
+      # tauri build 会先跑 beforeBuildCommand（npm run build），再编译并打出
+      # MSI 与 NSIS 两个安装包。custom-protocol 特性由 Tauri CLI 自动带上，
+      # 缺失会导致安装后窗口指向 dev server 而白屏。
+      - name: Build installers
+        run: npm run tauri build
+
+      - name: Collect installers
+        id: artifacts
+        shell: pwsh
+        run: |
+          $bundle = 'src-tauri/target/release/bundle'
+          $msi = Get-ChildItem -Path "$bundle/msi/*.msi" -ErrorAction SilentlyContinue
+          $nsis = Get-ChildItem -Path "$bundle/nsis/*.exe" -ErrorAction SilentlyContinue
+          if (-not $msi) { throw 'MSI installer was not produced' }
+          if (-not $nsis) { throw 'NSIS installer was not produced' }
+          $files = @($msi.FullName) + @($nsis.FullName)
+          $files | ForEach-Object { Write-Output "artifact: $_ ($([math]::Round((Get-Item $_).Length/1MB,2)) MB)" }
+          "paths={0}" -f ($files -join ';') | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      # gh 预装在 GitHub runner 上；用内建工具而非第三方 action，发布链路完全透明可审计。
+      - name: Publish release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $files = '${{ steps.artifacts.outputs.paths }}'.Split(';') | Where-Object { $_ }
+          gh release create $env:TAG `
+            @files `
+            --repo $env:GITHUB_REPOSITORY `
+            --target $env:GITHUB_SHA `
+            --title "AI-Pets $env:TAG" `
+            --notes "由 GitHub Actions 在 windows-latest 上构建。NSIS 包为 per-user 安装（无需管理员权限），MSI 包为 per-machine。普通用户请下载 NSIS 包。" `
+            --generate-notes
+
+      - name: Summary
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          "## AI-Pets $env:TAG 已发布" >> $env:GITHUB_STEP_SUMMARY
+          "https://github.com/$env:GITHUB_REPOSITORY/releases/tag/$env:TAG" >> $env:GITHUB_STEP_SUMMARY
