@@ -272,14 +272,14 @@ function typecheck() {
 /* ------------------------------------------------------- 4. dead exports */
 
 function sourceFileCount() {
-  const counts = { ts: 0, vue: 0 };
-  for (const d of ['src', 'tests']) {
+  const counts = { src: { ts: 0, vue: 0 }, tests: { ts: 0, vue: 0 } };
+  for (const d of Object.keys(counts)) {
     const walk = (dir) => {
       for (const e of readdirSync(dir, { withFileTypes: true })) {
         const p = join(dir, e.name);
         if (e.isDirectory()) walk(p);
-        else if (e.name.endsWith('.ts')) counts.ts++;
-        else if (e.name.endsWith('.vue')) counts.vue++;
+        else if (e.name.endsWith('.ts')) counts[d].ts++;
+        else if (e.name.endsWith('.vue')) counts[d].vue++;
       }
     };
     if (existsSync(join(ROOT, d))) walk(join(ROOT, d));
@@ -297,13 +297,17 @@ function deadScan() {
     output = `${err.stdout ?? ''}${err.stderr ?? ''}`;
   }
   const counts = sourceFileCount();
+  const ts = counts.src.ts + counts.tests.ts;
+  const vue = counts.src.vue + counts.tests.vue;
+  const srcTotal = counts.src.ts + counts.src.vue;
   return {
     exitCode,
     body: [
-      `files scanned: **${counts.ts} \`.ts\` + ${counts.vue} \`.vue\` = ${counts.ts + counts.vue}**`,
+      `files scanned: **${ts} \`.ts\` + ${vue} \`.vue\` = ${ts + vue}**`,
       '',
-      '> `src/**` alone is 21 `.ts` + 12 `.vue` = 33 files; `tests/**` adds 6 spec files,',
-      '> so the scan covers 39 — a superset of either count.',
+      `> \`src/**\` alone is ${counts.src.ts} \`.ts\` + ${counts.src.vue} \`.vue\` = ${srcTotal} files;`,
+      `> \`tests/**\` adds ${counts.tests.ts + counts.tests.vue} spec files, so the scan covers ${ts + vue}`,
+      '> — a superset of either count.',
       '',
       '```',
       output.trim(),
@@ -314,7 +318,41 @@ function deadScan() {
   };
 }
 
-/* ------------------------------------------------------ 5. Rust gates */
+/* ------------------------------------------------- 5. import-cycle scan */
+
+function cycleScan() {
+  let exitCode = 0;
+  let output = '';
+  try {
+    output = sh('node', ['scripts/cycle-scan.mjs']);
+  } catch (err) {
+    exitCode = err.status ?? 1;
+    output = `${err.stdout ?? ''}${err.stderr ?? ''}`;
+  }
+  const valueCycles = Number(/^value cycles\s+:\s+(\d+)/m.exec(output)?.[1] ?? -1);
+  const typeCycles = Number(/^type-only cycles\s+:\s+(\d+)/m.exec(output)?.[1] ?? -1);
+
+  return {
+    exitCode,
+    body: [
+      'A cycle is the only coupling defect no type checker reports: every module resolves and',
+      'every signature matches. The scan classifies each cycle by whether a back-edge survives',
+      'to the emitted JS. A value cycle fails the build; a cycle whose back-edges are all',
+      '`import type` is erased by TypeScript and is reported for review only.',
+      '',
+      '```',
+      output.trim(),
+      '```',
+      '',
+      `exit code: **${exitCode}** (0 = no value cycles)` +
+        (valueCycles === 0 && typeCycles > 0
+          ? ` — ${typeCycles} type-only cycle(s) recorded and accepted.`
+          : ''),
+    ].join('\n'),
+  };
+}
+
+/* ------------------------------------------------------ 6. Rust gates */
 
 function rustGates() {
   const probe = spawnSync('cargo', ['--version'], { encoding: 'utf8', shell: true });
@@ -369,6 +407,7 @@ const pe = peForensics();
 const gc = gitComparison();
 const tc = typecheck();
 const ds = deadScan();
+const cy = cycleScan();
 const rust = rustGates();
 
 push(
@@ -406,8 +445,10 @@ push(
 
 push('4. Static dead-export scan', ds.body);
 
+push('5. Import-cycle scan', cy.body);
+
 push(
-  '5. Rust gates',
+  '6. Rust gates',
   rust.available
     ? [
         '| gate | command | exit code |',
@@ -431,7 +472,7 @@ push(
 );
 
 push(
-  '6. Per-file diff',
+  '7. Per-file diff',
   [
     'The table below is the authoritative list of what changed against `HEAD`. Each entry was',
     'additionally read line-by-line; the substantive hunks are summarised after it.',
@@ -457,6 +498,7 @@ const failures = [
   ['git comparison', true],
   ['typecheck', tc.exitCode === 0],
   ['dead-export scan', ds.exitCode === 0],
+  ['import-cycle scan', cy.exitCode === 0],
   ['rust toolchain available', rust.available],
   ['rust fmt', rust.available && rust.fmt.exitCode === 0],
   ['rust clippy', rust.available && rust.clippy.exitCode === 0],

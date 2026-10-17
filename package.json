@@ -11,8 +11,9 @@
     "test:watch": "vitest",
     "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml --features custom-protocol",
     "scan:dead": "node scripts/dead-code-scan.mjs",
+    "scan:cycles": "node scripts/cycle-scan.mjs",
     "verify": "node scripts/verify.mjs",
-    "build": "npm run typecheck && npm run scan:dead && vite build",
+    "build": "npm run typecheck && npm run scan:dead && npm run scan:cycles && vite build",
     "preview": "vite preview",
     "tauri": "tauri"
   },
