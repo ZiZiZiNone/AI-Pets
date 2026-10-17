@@ -108,6 +108,32 @@
           </div>
         </div>
 
+        <div v-else-if="widget.type === 'text_input'" class="pod-col">
+          <label class="pod-label">{{ widget.label }}</label>
+          <span v-if="widget.description" class="pod-desc">{{ widget.description }}</span>
+          <textarea
+            v-if="widget.multiline"
+            v-model="widget.value"
+            class="cyber-textarea"
+            :placeholder="widget.placeholder"
+            rows="3"
+            @blur="commitTextInput(widget)"
+            @keyup.ctrl.enter="commitTextInput(widget)"
+          ></textarea>
+          <input
+            v-else
+            v-model="widget.value"
+            type="text"
+            class="matrix-url-input"
+            :placeholder="widget.placeholder"
+            @blur="commitTextInput(widget)"
+            @keyup.enter="commitTextInput(widget)"
+          />
+          <button v-if="widget.submit_label" class="clear-btn" @click="submitTextInput(widget)">
+            {{ widget.submit_label }}
+          </button>
+        </div>
+
         <div v-else-if="widget.type === 'log_viewer'" class="pod-col">
           <div class="log-top">
             <span class="pod-label">{{ widget.label }}</span>
@@ -233,6 +259,32 @@ async function handleSliderChange(
 ): Promise<void> {
   widget.value = newValue;
   await commitWidget(widget.id, newValue);
+}
+
+/**
+ * Upper bound on one text widget's value.
+ *
+ * The value travels over the WebSocket bus and back to the host, so an unbounded field
+ * would let whichever app owns the panel decide how much memory the host spends.
+ */
+const MAX_SDUI_TEXT_LENGTH = 2000;
+
+type TextInputWidget = Extract<SduiWidget, { type: 'text_input' }>;
+
+function clampSduiText(value: string): string {
+  return value.length > MAX_SDUI_TEXT_LENGTH ? value.slice(0, MAX_SDUI_TEXT_LENGTH) : value;
+}
+
+async function commitTextInput(widget: TextInputWidget): Promise<void> {
+  widget.value = clampSduiText(widget.value);
+  await commitWidget(widget.id, widget.value);
+}
+
+async function submitTextInput(widget: TextInputWidget): Promise<void> {
+  widget.value = clampSduiText(widget.value);
+  emit('log', `[SUBMIT] ${widget.label} => ${widget.value}`);
+  await applyWidgetSideEffect(widget.id, widget.value);
+  await notifyHost('panel.text_submitted', { widget_id: widget.id, value: widget.value });
 }
 
 async function handleButtonClick(

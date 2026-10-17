@@ -240,6 +240,25 @@ export type SduiWidget =
       type: 'log_viewer';
       label: string;
       lines: string[];
+    }
+  | {
+      /**
+       * Free text entry.
+       *
+       * The other widgets can only choose between values the host already knows; this is
+       * the one that lets a third-party panel ask for something new (a token, a path, a
+       * prompt) without the host shipping a field for it.
+       */
+      id: string;
+      type: 'text_input';
+      label: string;
+      value: string;
+      placeholder?: string;
+      description?: string;
+      /** Multi-line entry, which commits with Ctrl+Enter instead of Enter. */
+      multiline?: boolean;
+      /** Adds a button that raises `panel.text_submitted` in addition to `panel.state_changed`. */
+      submit_label?: string;
     };
 
 export interface SduiSchema {

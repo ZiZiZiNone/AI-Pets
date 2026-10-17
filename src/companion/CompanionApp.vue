@@ -130,6 +130,10 @@ function applyWidgetValue(widget: SduiWidget, value: unknown): boolean {
       if (typeof value !== 'number' || !Number.isFinite(value)) return false;
       widget.value = value;
       return true;
+    case 'text_input':
+      if (typeof value !== 'string') return false;
+      widget.value = value;
+      return true;
     default:
       return false;
   }

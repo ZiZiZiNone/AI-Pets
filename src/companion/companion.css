@@ -146,6 +146,8 @@
 .matrix-address-bar { display: flex; align-items: center; gap: 6px; }
 .matrix-tag { font-size: 10px; font-weight: 800; color: var(--pod-primary, #38bdf8); font-family: "JetBrains Mono", Consolas, monospace; }
 .matrix-url-input { flex: 1; padding: 5px 8px; background: rgba(2, 6, 23, 0.9); border: 1px solid rgba(56, 189, 248, 0.45); color: #f8fafc; font-size: 11px; }
+.cyber-textarea { width: 100%; padding: 5px 8px; background: rgba(2, 6, 23, 0.9); border: 1px solid rgba(56, 189, 248, 0.45); color: #f8fafc; font-size: 11px; font-family: inherit; resize: vertical; 
+}
 .matrix-go-btn { padding: 5px 10px; background: var(--pod-primary, #38bdf8); border: none; color: #020617; font-size: 10px; font-weight: 800; cursor: pointer; }
 .matrix-frame-wrapper { flex: 1; min-height: 150px; display: flex; border: 1px solid rgba(56, 189, 248, 0.3); background: rgba(2, 6, 23, 0.6); overflow: hidden; }
 .matrix-iframe { width: 100%; height: 100%; border: none; background: #ffffff; }

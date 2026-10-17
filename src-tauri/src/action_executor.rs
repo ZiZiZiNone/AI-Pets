@@ -1,6 +1,44 @@
 use serde::{Deserialize, Serialize};
 use std::process::Command;
 
+/// Longest identifier accepted for a pet folder name.
+pub const MAX_PET_ID_LEN: usize = 64;
+
+/// Accept a pet id only if it is shaped like a folder name.
+///
+/// The shipped pets used to be a hardcoded list, which meant a pet added by dropping a
+/// folder into `pets/` could be loaded and rendered but never selected from a menu: the
+/// four ids in the list were the only ones that could be switched to without editing Rust.
+/// A shape check keeps the security property that list was actually providing — no
+/// separators, no `..`, no whitespace or control characters, bounded length — while
+/// letting any pet that exists also be addressed.
+///
+/// Letters are accepted in any script, because a pet folder is named by its author and
+/// `银羽` is as valid a name as `silverfeather`. The id is only ever used as a lookup key
+/// and matched against a directory listing; it never reaches a shell or a path join, which
+/// is why the check is about shape rather than about a character allowlist.
+pub fn validate_pet_id(pet_id: &str) -> Result<(), String> {
+    if pet_id.is_empty() {
+        return Err("Invalid pet_id: empty".into());
+    }
+    if pet_id.chars().count() > MAX_PET_ID_LEN {
+        return Err(format!(
+            "Invalid pet_id: longer than {} characters",
+            MAX_PET_ID_LEN
+        ));
+    }
+    if !pet_id
+        .chars()
+        .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
+    {
+        return Err(format!(
+            "Invalid pet_id '{}': only letters, digits, '_' and '-' are allowed",
+            pet_id.escape_debug()
+        ));
+    }
+    Ok(())
+}
+
 #[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(tag = "action_id", content = "params", rename_all = "snake_case")]
 pub enum SafeActionCommand {
@@ -49,17 +87,8 @@ pub fn execute_whitelisted_action(cmd: &SafeActionCommand) -> Result<String, Str
             }
         }
         SafeActionCommand::SwitchPet { pet_id } => {
-            let allowed_pets = [
-                "aether_mecha_core",
-                "demo_sprite_pet",
-                "nyx_abyssal_familiar",
-                "pulse_glitch_phantom",
-            ];
-            if allowed_pets.contains(&pet_id.as_str()) {
-                Ok(format!("pet:{}", pet_id))
-            } else {
-                Err(format!("Unknown pet_id: {}", pet_id))
-            }
+            validate_pet_id(pet_id)?;
+            Ok(format!("pet:{}", pet_id))
         }
         SafeActionCommand::OpenOfficialDocs => {
             open_target_in_os("https://v2.tauri.app")?;
@@ -239,13 +268,60 @@ mod tests {
     }
 
     #[test]
-    fn unknown_pet_is_rejected() {
-        for pet in ["", "../secrets", "AETHER_MECHA_CORE", "demo_sprite_pet "] {
+    fn a_pet_that_ships_later_is_switched_to_without_a_code_change() {
+        // The behaviour this replaces: only the four bundled ids resolved, so a pet added
+        // as a folder could be selected from the interface but not from a menu action.
+        for pet in ["silverfeather_chibi", "My_Pet-2", "银羽"] {
             let action = cmd_with("switch_pet", serde_json::json!({ "pet_id": pet }));
-            assert!(execute_whitelisted_action(&action)
-                .unwrap_err()
-                .starts_with("Unknown pet_id"));
+            assert_eq!(
+                execute_whitelisted_action(&action).unwrap(),
+                format!("pet:{pet}"),
+                "a pet folder named {pet} must be addressable"
+            );
         }
+    }
+
+    #[test]
+    fn unknown_pet_is_rejected() {
+        // `AETHER_MECHA_CORE` used to be on this list and is now accepted: it is a valid
+        // folder name, and refusing it protected nothing. What must stay refused is
+        // anything that could escape the pets directory or smuggle in a second path.
+        for pet in [
+            "",
+            "../secrets",
+            "a/b",
+            "a\\b",
+            "demo_sprite_pet ",
+            " pet",
+            "pet\nid",
+            "pet\0id",
+            "pet;rm -rf /",
+            ".",
+            "..",
+        ] {
+            let action = cmd_with("switch_pet", serde_json::json!({ "pet_id": pet }));
+            let error = execute_whitelisted_action(&action).unwrap_err();
+            assert!(
+                error.starts_with("Invalid pet_id"),
+                "unexpected error for {pet:?}: {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_over_long_pet_id_is_refused_by_shape_not_by_length_of_a_list() {
+        let long_id = "a".repeat(MAX_PET_ID_LEN + 1);
+        assert!(validate_pet_id(&long_id).is_err());
+        assert!(validate_pet_id(&"a".repeat(MAX_PET_ID_LEN)).is_ok());
+    }
+
+    #[test]
+    fn the_rejection_message_escapes_control_characters() {
+        // The id reaches a log and, in the failure case, a UI string; a raw newline in
+        // there would let a client forge a second line of output.
+        let error = validate_pet_id("pet\nid").unwrap_err();
+        assert!(error.contains("\\n"), "{error}");
+        assert!(!error.contains('\n'), "{error}");
     }
 
     #[test]
