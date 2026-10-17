@@ -27,7 +27,8 @@ export const SLASH_COMMAND_HINTS: SlashCommandHint[] = [
   { command: '/sys', usage: '/sys', description: '巡检系统 CPU、内存与 WebSocket 状态', icon: '💻' },
   { command: '/scan', usage: '/scan', description: '投射全屏 AR 战术雷达标注层', icon: '🎯' },
   { command: '/calc', usage: '/calc <算式>', description: '安全算术求值（支持 + - * / % ** 括号）', icon: '🧮' },
-  { command: '/pet', usage: '/pet <aether|nyx|pulse|nova>', description: '快速切换四大内置机体', icon: '🧬' },
+  { command: '/pet', usage: '/pet <宠物 id>', description: '按 id 切换任意宠物（含自己放入的目录）', icon: '🧬' },
+  { command: '/reset', usage: '/reset', description: '清空当前宠物的多轮对话记忆', icon: '🧠' },
   { command: '/help', usage: '/help', description: '查看快捷斜杠指令列表', icon: '💡' },
 ];
 
@@ -122,11 +123,15 @@ export const CARE_MESSAGES = {
 
 export const COMMAND_MESSAGES = {
   help:
-    '💡 快捷指令：/focus [分] | /break [分] | /todo <事项> | /feed | /sys | /fortune | /calc <算式> | /pet <aether|nyx|pulse|nova>',
+    '💡 快捷指令：/focus [分] | /break [分] | /todo <事项> | /feed | /sys | /fortune | /calc <算式> | /pet <宠物 id> | /reset',
   calcResult: (expression: string, result: number) =>
     `🧮 算力核心结果：${expression} = ${result}`,
   calcError: '⚠️ 算式格式无法解析，示例：`/calc (1024 * 64) / 8`',
   calcErrorExample: '(1024 * 64) / 8',
+  historyCleared: (turns: number) =>
+    turns > 0
+      ? `🧠 已清空 ${turns} 轮对话记忆，接下来是一段全新的对话。`
+      : '🧠 当前宠物还没有对话记忆可以清空。',
 } as const;
 
 export const PERSONA_MESSAGES = {

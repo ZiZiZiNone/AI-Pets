@@ -1,4 +1,14 @@
-import { describe, expect, it, vi, afterEach } from 'vitest';
+import { beforeEach, describe, expect, it, vi, afterEach } from 'vitest';
+import { createPinia, setActivePinia } from 'pinia';
+import { usePetStore } from '@/store/petStore';
+import {
+  appendLlmTurn,
+  buildLlmMessages,
+  LLM_HISTORY_MAX_CHARS,
+  LLM_HISTORY_MAX_MESSAGES,
+  requestLlmCompletion,
+  trimLlmHistory,
+} from '@/utils/commandEngine';
 import { buildPetSystemPrompt, describePetPersona } from '@/utils/petPersona';
 import {
   DEFAULT_LLM_PROVIDER_ID,
@@ -225,5 +235,122 @@ describe('llm providers', () => {
     const cfg: LlmProviderConfig = { apiUrl: '', apiKey: 'sk-x' };
     expect(await sendLlmChat([{ role: 'user', content: 'hi' }], cfg)).toBeNull();
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('conversation memory', () => {
+  const turn = (index: number): LlmChatMessage[] => [
+    { role: 'user', content: `u${index}` },
+    { role: 'assistant', content: `a${index}` },
+  ];
+
+  it('keeps only the newest turns so the request cannot grow without limit', () => {
+    let history: LlmChatMessage[] = [];
+    for (let index = 1; index <= 10; index += 1) {
+      history = appendLlmTurn(history, `u${index}`, `a${index}`);
+    }
+    expect(history).toHaveLength(LLM_HISTORY_MAX_MESSAGES);
+    // The oldest exchange is the one dropped, never the newest.
+    expect(history[0].content).toBe('u7');
+    expect(history[history.length - 1].content).toBe('a10');
+  });
+
+  it('truncates one oversized turn instead of resending it whole', () => {
+    const trimmed = trimLlmHistory([
+      { role: 'user', content: 'x'.repeat(LLM_HISTORY_MAX_CHARS + 500) },
+    ]);
+    expect(trimmed[0].content.length).toBe(LLM_HISTORY_MAX_CHARS);
+  });
+
+  it('flatmaps a turn into a user/assistant pair in order', () => {
+    expect(appendLlmTurn([], '你好', '你也好')).toEqual([
+      { role: 'user', content: '你好' },
+      { role: 'assistant', content: '你也好' },
+    ]);
+  });
+
+  it('composes the request as brief, remembered turns, then the new input', () => {
+    const messages = buildLlmMessages('你是银羽', turn(1), '现在几点了');
+    expect(messages[0]).toEqual({ role: 'system', content: '你是银羽' });
+    expect(messages.slice(1, 3)).toEqual(turn(1));
+    expect(messages[messages.length - 1]).toEqual({ role: 'user', content: '现在几点了' });
+    expect(messages).toHaveLength(4);
+  });
+
+  it('sends just the brief and the input for a first message', () => {
+    expect(buildLlmMessages('你是银羽', [], '你好')).toEqual([
+      { role: 'system', content: '你是银羽' },
+      { role: 'user', content: '你好' },
+    ]);
+  });
+
+  it('carries the remembered turns into the request body', async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: 'ok' } }] }),
+    }));
+    // @ts-expect-error the test replaces the global fetch with a shaped double
+    globalThis.fetch = fetchMock;
+
+    await requestLlmCompletion(
+      '现在几点了',
+      basePet(),
+      { enabled: true, apiUrl: 'https://x/v1/chat', apiKey: 'sk', model: 'm', customSystemPrompt: '' },
+      appendLlmTurn([], '你好', '你也好')
+    );
+
+    const body = JSON.parse(String(fetchMock.mock.calls[0][1].body));
+    expect(body.messages).toHaveLength(4);
+    expect(body.messages[1]).toEqual({ role: 'user', content: '你好' });
+    expect(body.messages[2]).toEqual({ role: 'assistant', content: '你也好' });
+  });
+});
+
+describe('per-pet conversation memory in the store', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    setActivePinia(createPinia());
+  });
+
+  it('keeps the turns of different pets apart', () => {
+    const store = usePetStore();
+    store.recordLlmTurn('silverfeather', '你好', '你好呀');
+    store.recordLlmTurn('aether', '启动', '核心就绪');
+
+    expect(store.llmHistoryFor('silverfeather')).toEqual([
+      { role: 'user', content: '你好' },
+      { role: 'assistant', content: '你好呀' },
+    ]);
+    expect(store.llmHistoryFor('aether')).toHaveLength(2);
+    expect(store.llmHistoryFor('unknown_pet')).toEqual([]);
+  });
+
+  it('forgets only the addressed pet, and reports how many turns went', () => {
+    const store = usePetStore();
+    store.recordLlmTurn('silverfeather', 'a', 'b');
+    store.recordLlmTurn('silverfeather', 'c', 'd');
+    store.recordLlmTurn('aether', 'e', 'f');
+
+    expect(store.clearLlmHistory('silverfeather')).toBe(2);
+    expect(store.llmHistoryFor('silverfeather')).toEqual([]);
+    expect(store.llmHistoryFor('aether')).toHaveLength(2);
+    // Nothing was there to forget the second time; the caller gets 0, not a fake count.
+    expect(store.clearLlmHistory('silverfeather')).toBe(0);
+  });
+
+  it('ignores a pet id that never spoke', () => {
+    const store = usePetStore();
+    store.recordLlmTurn('', 'x', 'y');
+    expect(store.clearLlmHistory('')).toBe(0);
+    expect(store.llmHistoryFor('')).toEqual([]);
+  });
+
+  it('restores the remembered turns from storage', () => {
+    const first = usePetStore();
+    first.recordLlmTurn('silverfeather', '你好', '你好呀');
+
+    setActivePinia(createPinia());
+    const second = usePetStore();
+    expect(second.llmHistoryFor('silverfeather')).toHaveLength(2);
   });
 });

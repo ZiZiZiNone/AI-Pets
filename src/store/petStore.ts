@@ -30,7 +30,8 @@ import {
   serializeHostSettingsYaml,
   serializePetManifestYaml,
 } from '@/utils/yamlLoader';
-import { executeChatOrSlashCommand, pickDailyFortune } from '@/utils/commandEngine';
+import { appendLlmTurn, executeChatOrSlashCommand, pickDailyFortune } from '@/utils/commandEngine';
+import type { LlmChatMessage } from '@/utils/llmProviders';
 import {
   executeExternalSafeAction,
   executeInternalStageEvent,
@@ -71,6 +72,7 @@ const DEFAULT_PET_ID = 'aether_mecha_core';
 const STORAGE_KEYS = {
   LLM: 'desktop_pet_llm_config_v2',
   HISTORY: COMMAND_HISTORY_KEY,
+  LLM_HISTORY: 'desktop_pet_llm_history_v1',
 } as const;
 
 const DEFAULT_LLM_CONFIG: LlmBridgeConfig = {
@@ -130,6 +132,17 @@ export const usePetStore = defineStore('petStore', () => {
     loadStorage(STORAGE_KEYS.HISTORY, DEFAULT_COMMAND_HISTORY)
   );
   const llmConfig = ref<LlmBridgeConfig>(loadStorage(STORAGE_KEYS.LLM, DEFAULT_LLM_CONFIG));
+  /**
+   * Conversation memory, keyed by pet.
+   *
+   * Keyed rather than shared because the pets are different characters: a single history
+   * would let one pet read the other's half of the conversation and answer as if it had
+   * said it. Values are bounded by `appendLlmTurn`, so the stored payload cannot grow
+   * without limit across sessions either.
+   */
+  const llmHistory = ref<Record<string, LlmChatMessage[]>>(
+    loadStorage(STORAGE_KEYS.LLM_HISTORY, {})
+  );
   const pendingCompanionLoad = ref<CompanionLoadPayload | null>(null);
 
   // Per-instance runtime state: no module-level singletons, so one window can never
@@ -550,6 +563,33 @@ export const usePetStore = defineStore('petStore', () => {
     saveStorage(STORAGE_KEYS.LLM, llmConfig.value);
   }
 
+  /** Turns remembered for one pet, newest last. Empty for a pet that has not spoken yet. */
+  function llmHistoryFor(petId: string): LlmChatMessage[] {
+    if (!petId) return [];
+    return llmHistory.value[petId] ?? [];
+  }
+
+  function recordLlmTurn(petId: string, userInput: string, reply: string): void {
+    if (!petId) return;
+    llmHistory.value = {
+      ...llmHistory.value,
+      [petId]: appendLlmTurn(llmHistoryFor(petId), userInput, reply),
+    };
+    saveStorage(STORAGE_KEYS.LLM_HISTORY, llmHistory.value);
+  }
+
+  /** Returns how many turns were forgotten, so the confirmation can be specific. */
+  function clearLlmHistory(petId: string): number {
+    if (!petId) return 0;
+    const turns = Math.floor(llmHistoryFor(petId).length / 2);
+    if (turns === 0) return 0;
+    const next = { ...llmHistory.value };
+    delete next[petId];
+    llmHistory.value = next;
+    saveStorage(STORAGE_KEYS.LLM_HISTORY, llmHistory.value);
+    return turns;
+  }
+
   async function saveHostSettings(): Promise<void> {
     stageBus?.postMessage({ settings: structuredClone(toRaw(settings.value)) });
     try {
@@ -694,6 +734,9 @@ export const usePetStore = defineStore('petStore', () => {
     registerExternalMenu,
     unregisterExternalMenu,
     saveLlmConfig,
+    llmHistoryFor,
+    recordLlmTurn,
+    clearLlmHistory,
     saveHostSettings,
     setFpsOverride,
     requestCompanionLoad,

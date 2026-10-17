@@ -16,6 +16,7 @@ import { buildPetSystemPrompt } from '@/utils/petPersona';
 import {
   isLlmConfigUsable,
   sendLlmChat,
+  type LlmChatMessage,
   type LlmProviderConfig,
 } from '@/utils/llmProviders';
 import {
@@ -32,6 +33,7 @@ const CALC_RESULT_MS = 4500;
 const CALC_ERROR_MS = 3600;
 const HELP_MS = 6500;
 const TODO_ADDED_MS = 3800;
+const HISTORY_CLEARED_MS = 4200;
 const ARITHMETIC_TOKENS = /\d+(?:\.\d+)?|\*\*|[+\-*/%()]/g;
 const NUMBER_LITERAL = /^\d+(?:\.\d+)?$/;
 const RESULT_PRECISION = 6;
@@ -167,10 +169,60 @@ export function generatePersonaDialogue(
   return pickFromPool(PERSONA_POOLS[petId] || PERSONA_POOLS[DEFAULT_PERSONA_ID], input, stats.affinity);
 }
 
+/**
+ * How much conversation the model is shown.
+ *
+ * Bounded rather than unlimited because every turn is re-sent with each request: an
+ * unbounded history makes each reply slower and more expensive than the last, and a pet
+ * that has been running for days would eventually exceed the model's own window. Eight
+ * messages is four exchanges, which is enough for pronouns and follow-ups to resolve.
+ */
+export const LLM_HISTORY_MAX_MESSAGES = 8;
+
+/** Longest single turn kept verbatim; pasted logs are truncated rather than re-sent whole. */
+export const LLM_HISTORY_MAX_CHARS = 500;
+
+export function trimLlmHistory(history: readonly LlmChatMessage[]): LlmChatMessage[] {
+  return history.slice(-LLM_HISTORY_MAX_MESSAGES).map((message) => ({
+    role: message.role,
+    content:
+      message.content.length > LLM_HISTORY_MAX_CHARS
+        ? message.content.slice(0, LLM_HISTORY_MAX_CHARS)
+        : message.content,
+  }));
+}
+
+/** Append one exchange, dropping the oldest turns so the window stays bounded. */
+export function appendLlmTurn(
+  history: readonly LlmChatMessage[],
+  userInput: string,
+  reply: string
+): LlmChatMessage[] {
+  return trimLlmHistory([
+    ...history,
+    { role: 'user', content: userInput },
+    { role: 'assistant', content: reply },
+  ]);
+}
+
+/** Compose the request: character brief first, then the remembered turns, then input. */
+export function buildLlmMessages(
+  systemPrompt: string,
+  history: readonly LlmChatMessage[],
+  userInput: string
+): LlmChatMessage[] {
+  return [
+    { role: 'system', content: systemPrompt },
+    ...trimLlmHistory(history),
+    { role: 'user', content: userInput },
+  ];
+}
+
 export async function requestLlmCompletion(
   input: string,
   pet: PetManifest | null,
-  llmConfig: LlmBridgeConfig
+  llmConfig: LlmBridgeConfig,
+  history: readonly LlmChatMessage[] = []
 ): Promise<string | null> {
   const providerConfig: LlmProviderConfig = {
     provider: llmConfig.provider,
@@ -183,13 +235,7 @@ export async function requestLlmCompletion(
   if (!isLlmConfigUsable(providerConfig)) return null;
 
   return sendLlmChat(
-    [
-      {
-        role: 'system',
-        content: buildPetSystemPrompt(pet, llmConfig.customSystemPrompt),
-      },
-      { role: 'user', content: input },
-    ],
+    buildLlmMessages(buildPetSystemPrompt(pet, llmConfig.customSystemPrompt), history, input),
     providerConfig
   );
 }
@@ -310,6 +356,18 @@ async function runSlashCommand(
       petStore.switchPetById(PET_ALIASES[argString.toLowerCase()] || argString);
       return true;
 
+    case 'reset': {
+      const cleared = petStore.clearLlmHistory(petStore.currentPet?.id ?? '');
+      petStore.scheduleAction({
+        priority: 'P1',
+        motion: 'happy',
+        expression: 'smile',
+        text: COMMAND_MESSAGES.historyCleared(cleared),
+        durationMs: HISTORY_CLEARED_MS,
+      });
+      return true;
+    }
+
     default:
       return false;
   }
@@ -336,7 +394,19 @@ function announceCalc(petStore: PetStore, expression: string): void {
 }
 
 async function respondWithPersona(petStore: PetStore, input: string): Promise<void> {
-  const llmReply = await requestLlmCompletion(input, petStore.currentPet, petStore.llmConfig);
+  const petId = petStore.currentPet?.id ?? '';
+  const llmReply = await requestLlmCompletion(
+    input,
+    petStore.currentPet,
+    petStore.llmConfig,
+    petStore.llmHistoryFor(petId)
+  );
+  if (llmReply) {
+    // Only real model turns are remembered. Recording the offline fallbacks as well would
+    // feed canned lines back to the model as if the pet had written them, and the next
+    // reply would start imitating the template instead of the persona.
+    petStore.recordLlmTurn(petId, input, llmReply);
+  }
   const reply =
     llmReply || generatePersonaDialogue(input, petStore.currentPet, petStore.stats);
   petStore.scheduleAction({
