@@ -11,12 +11,19 @@ running app can answer:
 * What the rendered entry points say, e.g. the readiness text on the stage recognition
   button, which differs per `audio.stt.provider` and must match the code.
 
-It is **not** a pass/fail gate: it reports what it observed and exits non-zero only when it
-cannot observe anything. The app it starts is killed again, together with its children.
+It then talks to the in-process WebSocket bus, because a bus reply is the only place where
+"the host refused this" and "the host silently pretended to succeed" are distinguishable.
+The pet-switch round trip is checked in both directions on purpose: a switch to a folder
+that is not installed must come back as `status: error` naming the id (it used to answer
+`status: ok`), while a switch to an installed pet must still answer `status: ok`. That
+part *is* a pass/fail gate and fails the run; the capability part only reports.
+
+The app it starts is killed again, together with its children.
 
 Usage:
-    python scripts/runtime-smoke.py                 # start, probe, stop
+    python scripts/runtime-smoke.py                 # start, probe, exercise the bus, stop
     python scripts/runtime-smoke.py --read-only     # do not click anything in the page
+    python scripts/runtime-smoke.py --no-bus        # skip the bus round trip
     python scripts/runtime-smoke.py --keep-running  # leave the app up for manual inspection
 """
 
@@ -42,6 +49,11 @@ except (AttributeError, OSError):
 REPO = Path(__file__).resolve().parent.parent
 DEFAULT_EXE = REPO / "src-tauri" / "target" / "release" / "ai-pets.exe"
 DEBUG_PORT = 9222
+BUS_PORT = 9527
+APP_IDENTIFIER = "com.aipets.microkernel"
+TOKEN_FILE_NAME = ".pet_ws_token"
+# A well-formed id that is deliberately not installed, so the refusal path is the one used.
+ABSENT_PET_ID = "runtime_smoke_absent_pet"
 
 # Reported verbatim in the output, so the probe result can be compared against the docs.
 CAPABILITIES_JS = """
@@ -158,25 +170,39 @@ class CdpSession:
         frame += bytes(b ^ mask[i % 4] for i, b in enumerate(payload))
         self.sock.sendall(bytes(frame))
 
+    def _read_frame(self):
+        first, second = self._read(2)
+        opcode = first & 0x0F
+        length = second & 0x7F
+        if length == 126:
+            length = struct.unpack("!H", self._read(2))[0]
+        elif length == 127:
+            length = struct.unpack("!Q", self._read(8))[0]
+        return opcode, self._read(length)
+
     def call(self, method, params=None):
         ident = self.next_id
         self.next_id += 1
         self._send(json.dumps({"id": ident, "method": method, "params": params or {}}))
         for _ in range(500):
-            first, second = self._read(2)
-            opcode = first & 0x0F
-            length = second & 0x7F
-            if length == 126:
-                length = struct.unpack("!H", self._read(2))[0]
-            elif length == 127:
-                length = struct.unpack("!Q", self._read(8))[0]
-            payload = self._read(length)
+            opcode, payload = self._read_frame()
             if opcode != 0x1:
                 continue
             message = json.loads(payload.decode("utf-8"))
             if message.get("id") == ident:
                 return message
         raise RuntimeError(f"no reply to {method}")
+
+    def send_packet(self, packet):
+        self._send(json.dumps(packet, ensure_ascii=False))
+
+    def recv_packet(self):
+        for _ in range(200):
+            opcode, payload = self._read_frame()
+            if opcode != 0x1:
+                continue
+            return json.loads(payload.decode("utf-8"))
+        raise RuntimeError("the bus sent nothing back")
 
     def evaluate(self, expression):
         reply = self.call(
@@ -196,14 +222,26 @@ class CdpSession:
 
 
 def wait_for_debugger(port, timeout):
+    """Return the page targets, waiting until the real bundle is up.
+
+    `/json/list` answers before the app's own webviews have navigated, so the first poll can
+    return a bare `about:blank` target. Reporting capabilities for that page would be
+    reporting the wrong webview, so the wait continues until a `tauri.localhost` page exists.
+    """
     deadline = time.time() + timeout
     last = None
+    latest = []
     while time.time() < deadline:
         try:
-            return http_json(f"http://127.0.0.1:{port}/json/list")
+            latest = http_json(f"http://127.0.0.1:{port}/json/list")
+            pages = [t for t in latest if t.get("type") == "page"]
+            if any("tauri.localhost" in (t.get("url") or "") for t in pages):
+                return latest
         except (urllib.error.URLError, ConnectionError, OSError, ValueError) as exc:
             last = exc
-            time.sleep(0.4)
+        time.sleep(0.4)
+    if latest:
+        return latest
     raise SystemExit(f"the app never opened devtools on port {port} ({last})")
 
 
@@ -217,12 +255,79 @@ def kill_tree(pid):
     )
 
 
+def read_bus_token():
+    """The same candidate order the host uses, so this never reads a stale token."""
+    candidates = [REPO / TOKEN_FILE_NAME]
+    for env_var in ("APPDATA", "XDG_DATA_HOME"):
+        base = os.environ.get(env_var)
+        if base:
+            candidates.append(Path(base) / APP_IDENTIFIER / TOKEN_FILE_NAME)
+    candidates.append(Path.home() / ".local" / "share" / APP_IDENTIFIER / TOKEN_FILE_NAME)
+    for candidate in candidates:
+        if candidate.exists():
+            token = candidate.read_text(encoding="utf-8").strip()
+            if token:
+                return token, candidate
+    raise ConnectionError("the host issued no bus token; looked in " + ", ".join(map(str, candidates)))
+
+
+def installed_pets():
+    pets = REPO / "pets"
+    if not pets.is_dir():
+        return []
+    return sorted(p.name for p in pets.iterdir() if (p / "pet.yaml").is_file())
+
+
+def safe_action(action_id, params):
+    return {
+        "priority": 1,
+        "msg_type": "safe_action",
+        "action": {"action_id": action_id, "params": params},
+    }
+
+
+def bus_round_trip(port):
+    """Check both directions of one switch: a missing pet must be refused, a real one accepted.
+
+    Returns True when both answers are the ones the fix promises. The old behaviour answered
+    `status: ok` for a pet that was never installed, which is exactly what this catches.
+    """
+    token, token_path = read_bus_token()
+    print(f"\n=== bus round trip on 127.0.0.1:{port} (token from {token_path})")
+    session = CdpSession(f"ws://127.0.0.1:{port}/")
+    session.connect()
+    ok = True
+    try:
+        session.send_packet({"token": token, **safe_action("switch_pet", {"pet_id": ABSENT_PET_ID})})
+        refusal = session.recv_packet()
+        print(f"switch_pet({ABSENT_PET_ID}) ->", refusal)
+        if refusal.get("status") != "error" or ABSENT_PET_ID not in json.dumps(refusal, ensure_ascii=False):
+            print("  REGRESSION: a pet that is not installed was not refused by name")
+            ok = False
+
+        pets = installed_pets()
+        if pets:
+            wanted = pets[0]
+            session.send_packet({"token": token, **safe_action("switch_pet", {"pet_id": wanted})})
+            accepted = session.recv_packet()
+            print(f"switch_pet({wanted}) ->", accepted)
+            if accepted.get("status") != "ok" or accepted.get("result") != f"pet:{wanted}":
+                print("  REGRESSION: an installed pet was not switched to")
+                ok = False
+        else:
+            print("  no installed pet found under pets/, accepted-branch not exercised")
+    finally:
+        session.close()
+    return ok
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--exe", default=str(DEFAULT_EXE), help="binary to start")
     parser.add_argument("--port", type=int, default=DEBUG_PORT, help="devtools port")
     parser.add_argument("--wait", type=float, default=25.0, help="seconds to wait for devtools")
     parser.add_argument("--read-only", action="store_true", help="do not click anything")
+    parser.add_argument("--no-bus", action="store_true", help="skip the WebSocket bus round trip")
     parser.add_argument("--keep-running", action="store_true", help="leave the app running")
     args = parser.parse_args()
 
@@ -261,6 +366,9 @@ def main():
                 print("stage chat bar state:", session.evaluate(CHAT_BAR_JS))
             finally:
                 session.close()
+        if not args.no_bus:
+            if not bus_round_trip(BUS_PORT):
+                status = 1
     except (SystemExit, ConnectionError, RuntimeError) as exc:
         print(f"probe failed: {exc}")
         status = 1
