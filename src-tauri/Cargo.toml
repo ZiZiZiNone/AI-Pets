@@ -23,6 +23,9 @@ tokio = { version = "1.38", features = ["full"] }
 tokio-tungstenite = "0.23"
 futures-util = "0.3"
 notify = "6.1"
+# Speech engines exchange audio with the host as base64 in a JSON command payload; the
+# frontend turns it into a Blob and plays it through the lip-sync analyser.
+base64 = "0.23"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.58", features = [

@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod action_executor;
+mod engine_runner;
 mod win32_window;
 mod ws_server;
 
@@ -452,11 +453,26 @@ fn save_host_settings(yaml_content: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn execute_pet_action(
+async fn execute_pet_action(
     action: PetActionPayload,
     extra_args: Option<Vec<String>>,
 ) -> Result<String, String> {
     execute_general_pet_action(&action, extra_args)
+}
+
+/// Run a user-configured speech engine on behalf of the frontend.
+///
+/// Declared `async` so the call is dispatched onto the runtime instead of the window
+/// thread: an engine is allowed to run for minutes, and a synchronous command would freeze
+/// the stage window for that whole time. The body itself blocks, so it is moved to a
+/// blocking worker rather than stalling a runtime worker thread.
+#[tauri::command]
+async fn run_external_engine(
+    request: engine_runner::EngineRequest,
+) -> Result<engine_runner::EngineResult, String> {
+    tauri::async_runtime::spawn_blocking(move || engine_runner::run_engine(&request))
+        .await
+        .map_err(|e| format!("引擎执行失败: {}", e))?
 }
 
 #[tauri::command]
@@ -687,6 +703,7 @@ fn main() {
             save_pet_manifest,
             save_host_settings,
             execute_pet_action,
+            run_external_engine,
             ws_send_event,
             snap_pet_to_foreground_window,
             set_edge_peek_mode,

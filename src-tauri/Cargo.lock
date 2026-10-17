@@ -21,6 +21,7 @@ dependencies = [
 name = "ai-pets"
 version = "2.0.0"
 dependencies = [
+ "base64 0.23.1",
  "futures-util",
  "notify",
  "serde",
