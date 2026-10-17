@@ -14,7 +14,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
-use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Emitter, Manager, State};
 use win32_window::{
     adapt_windows_to_monitor, apply_edge_peek_position, apply_no_activate_style,
     apply_window_click_through, snap_pet_window_to_foreground, start_cursor_and_window_poller,
@@ -22,7 +22,7 @@ use win32_window::{
 };
 use ws_server::{
     start_ws_server, WsCommandBroker, DEFAULT_HEARTBEAT_SEC, DEFAULT_WS_PORT_RANGE,
-    MIN_HEARTBEAT_SEC,
+    MIN_HEARTBEAT_SEC, TOKEN_FILE_NAME,
 };
 
 static LAST_INTERNAL_WRITE: Mutex<Option<Instant>> = Mutex::new(None);
@@ -112,21 +112,49 @@ pub struct HostRuntimeMeta {
     pub broker: Arc<WsCommandBroker>,
 }
 
-fn resolve_project_dir(sub: &str) -> PathBuf {
-    let candidates = [
-        PathBuf::from(sub),
-        PathBuf::from("..").join(sub),
-        std::env::current_exe()
-            .ok()
-            .and_then(|p| p.parent().map(|d| d.join(sub)))
-            .unwrap_or_else(|| PathBuf::from(sub)),
-    ];
-    for c in candidates {
-        if c.exists() {
-            return c;
-        }
+/// Locations a project directory may live in, nearest first.
+///
+/// The list exists because the same tree is reached from four different arrangements: a
+/// development run with the repository as the working directory, a run from `src-tauri`,
+/// a portable build beside its files, and an installed build.
+fn project_dir_candidates(sub: &str, exe_dir: Option<&Path>) -> Vec<PathBuf> {
+    let mut candidates = vec![PathBuf::from(sub), PathBuf::from("..").join(sub)];
+    if let Some(dir) = exe_dir {
+        candidates.push(dir.join(sub));
+        // A resource declared in `tauri.conf.json` as `../<name>` is unpacked under
+        // `_up_/<name>`, which is how a parent-directory component is encoded
+        // (`tauri-utils`, `resources::resource_relpath`). That is the only location a
+        // bundled `config/` or `pets/` has in an installed build, so without this
+        // candidate the packaged settings would never be read.
+        candidates.push(dir.join("_up_").join(sub));
     }
-    PathBuf::from(sub)
+    candidates
+}
+
+fn resolve_project_dir(sub: &str) -> PathBuf {
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(Path::to_path_buf));
+    project_dir_candidates(sub, exe_dir.as_deref())
+        .into_iter()
+        .find(|candidate| candidate.exists())
+        .unwrap_or_else(|| PathBuf::from(sub))
+}
+
+/// Where the bus token may be written, in order of preference.
+///
+/// The working directory comes first so a development or portable run keeps the
+/// `.pet_ws_token` file clients already look for. That directory is not always
+/// writable: a per-machine install runs from `Program Files`, where a standard user
+/// cannot create files, and a token that is never written leaves the bus looking
+/// healthy while no client can authenticate. The app data directory is per-user and
+/// always writable, so it is the fallback that keeps the bus reachable.
+fn token_path_candidates(app: &tauri::App) -> Vec<PathBuf> {
+    let mut candidates = vec![PathBuf::from(TOKEN_FILE_NAME)];
+    if let Ok(dir) = app.path().app_data_dir() {
+        candidates.push(dir.join(TOKEN_FILE_NAME));
+    }
+    candidates
 }
 
 fn parse_ws_config_from_settings() -> ((u16, u16), u64) {
@@ -338,22 +366,15 @@ fn set_companion_focusable(app: AppHandle, focusable: bool) -> Result<(), String
 
 #[tauri::command]
 fn open_companion_window(app: AppHandle) -> Result<(), String> {
-    if let Some(existing) = app.get_webview_window("companion") {
-        let _ = existing.show();
-        let _ = existing.set_focus();
-        return Ok(());
-    }
-    WebviewWindowBuilder::new(&app, "companion", WebviewUrl::App("companion.html".into()))
-        .title("DesktopPetHost Companion")
-        .inner_size(380.0, 520.0)
-        .transparent(true)
-        .decorations(false)
-        .always_on_top(true)
-        .skip_taskbar(true)
-        .resizable(false)
-        .center()
-        .build()
-        .map_err(|e| e.to_string())?;
+    // The window is declared in `tauri.conf.json` and is never destroyed, because the
+    // window-event handler turns close requests into hides. Looking it up is the whole
+    // job here; a second definition of its geometry in this file would only be a place
+    // for the two to drift apart.
+    let companion = app
+        .get_webview_window("companion")
+        .ok_or_else(|| "Companion window is not available".to_string())?;
+    let _ = companion.show();
+    let _ = companion.set_focus();
     Ok(())
 }
 
@@ -604,7 +625,12 @@ fn setup_system_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>>
                 let _ = app_handle.emit("pet-state:sync", &snapshot);
             }
             "tray_quit" => {
-                let _ = fs::remove_file(".pet_ws_token");
+                // Remove the token from wherever it was actually written, which is not
+                // necessarily the working directory.
+                let meta = app_handle.state::<HostRuntimeMeta>();
+                if let Some(path) = meta.broker.token_path() {
+                    let _ = fs::remove_file(path);
+                }
                 app_handle.exit(0);
             }
             _ => {}
@@ -619,22 +645,34 @@ fn setup_system_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>>
 }
 
 fn main() {
-    let token_file = PathBuf::from(".pet_ws_token");
     let (port_range, hb_timeout_sec) = parse_ws_config_from_settings();
-    let broker = WsCommandBroker::init_with_token_file(token_file);
-    broker
-        .heartbeat_timeout_sec
-        .store(hb_timeout_sec, Ordering::Relaxed);
-    let broker_for_setup = broker.clone();
 
     tauri::Builder::default()
         .manage(Mutex::new(CanonicalPetState::default()))
-        .manage(HostRuntimeMeta {
-            started_at: Instant::now(),
-            broker,
+        .on_window_event(|window, event| {
+            // Every window here is a surface that is shown and hidden: `panel.open`,
+            // `hud.draw`, the tray items and the in-app close controls all look the
+            // window up by label and then call `show()` or `hide()`. A destroyed window
+            // can never be found again, so one stray close request would leave the pet
+            // or a panel unreachable for the rest of the session. Leaving the app is the
+            // tray's quit item, which calls `AppHandle::exit` and not this event.
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
+            }
         })
         .setup(move |app| {
             let handle = app.handle().clone();
+            let broker = WsCommandBroker::init_with_token_candidates(&token_path_candidates(app));
+            broker
+                .heartbeat_timeout_sec
+                .store(hb_timeout_sec, Ordering::Relaxed);
+            let broker_for_setup = broker.clone();
+            app.manage(HostRuntimeMeta {
+                started_at: Instant::now(),
+                broker,
+            });
+
             adapt_windows_to_monitor(app);
             let _ = setup_system_tray(app);
             start_cursor_and_window_poller(handle.clone());
@@ -666,9 +704,46 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{csv_field, parse_tasklist_memory_mb};
+    use super::{csv_field, parse_tasklist_memory_mb, project_dir_candidates};
+    use std::path::{Path, PathBuf};
 
     const REAL: &str = "\"powershell.exe\",\"24924\",\"Console\",\"1\",\"60,776 K\"\r\n";
+
+    #[test]
+    fn candidate_locations_are_tried_in_the_documented_order() {
+        let candidates = project_dir_candidates("config", Some(Path::new("/opt/app")));
+        assert_eq!(
+            candidates,
+            vec![
+                PathBuf::from("config"),               // beside the working directory
+                PathBuf::from("../config"),            // one level up, as a dev run has it
+                PathBuf::from("/opt/app/config"),      // beside the executable
+                PathBuf::from("/opt/app/_up_/config")  // unpacked `../config` resource
+            ]
+        );
+    }
+
+    #[test]
+    fn a_bundled_resource_is_looked_for_under_the_up_prefix() {
+        // Regression: the installed build keeps `../config/**` and `../pets/**` under
+        // `_up_/`, and the resource-less candidates alone never reach them, so the
+        // packaged settings stayed inert.
+        for sub in ["config", "pets"] {
+            let candidates = project_dir_candidates(sub, Some(Path::new("/opt/app")));
+            assert!(
+                candidates.contains(&PathBuf::from(format!("/opt/app/_up_/{sub}"))),
+                "{sub} must be looked for where the bundler puts it"
+            );
+        }
+    }
+
+    #[test]
+    fn without_an_executable_directory_only_relative_locations_remain() {
+        assert_eq!(
+            project_dir_candidates("config", None),
+            vec![PathBuf::from("config"), PathBuf::from("../config")]
+        );
+    }
 
     #[test]
     fn quoted_field_containing_a_comma_stays_intact() {

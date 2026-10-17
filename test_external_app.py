@@ -11,20 +11,44 @@ import sys
 import threading
 import time
 
-TOKEN_FILE = Path(".pet_ws_token")
+TOKEN_FILE_NAME = ".pet_ws_token"
+APP_IDENTIFIER = "com.desktoppethost.microkernel"
 DEFAULT_PORTS = range(9527, 9538)
 SELFTEST_TOKEN = "selftest_token"
 
 
+def token_file_candidates() -> list[Path]:
+    """Where the host may have written the bus token, nearest first.
+
+    The working directory comes first, which covers a development or portable run.
+    An installed build falls back to the app data directory, because a per-machine
+    install lives in `Program Files`, where a standard user cannot create files.
+    """
+    candidates = [Path(TOKEN_FILE_NAME)]
+    for env_var in ("APPDATA", "XDG_DATA_HOME"):
+        base = os.environ.get(env_var)
+        if base:
+            candidates.append(Path(base) / APP_IDENTIFIER / TOKEN_FILE_NAME)
+    candidates.append(Path.home() / ".local" / "share" / APP_IDENTIFIER / TOKEN_FILE_NAME)
+    return candidates
+
+
 def read_local_token() -> str:
-    if not TOKEN_FILE.exists():
-        raise ConnectionError(
-            f"{TOKEN_FILE} not found - start DesktopPetHost first so it can issue a bus token."
-        )
-    token = TOKEN_FILE.read_text(encoding="utf-8").strip()
-    if not token:
-        raise ConnectionError(f"{TOKEN_FILE} is empty - the host bus token was not issued.")
-    return token
+    tried: list[Path] = []
+    for candidate in token_file_candidates():
+        tried.append(candidate)
+        if not candidate.exists():
+            continue
+        token = candidate.read_text(encoding="utf-8").strip()
+        if not token:
+            raise ConnectionError(
+                f"{candidate} is empty - the host bus token was not issued."
+            )
+        return token
+    locations = "\n  ".join(str(path) for path in tried)
+    raise ConnectionError(
+        f"bus token not found. Start DesktopPetHost first, then retry. Looked in:\n  {locations}"
+    )
 
 
 class StdlibWebSocketClient:

@@ -5,7 +5,7 @@ use std::collections::hash_map::RandomState;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::hash::{BuildHasher, Hasher};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU16, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -20,6 +20,7 @@ use tokio_tungstenite::tungstenite::Message;
 pub const DEFAULT_WS_PORT_RANGE: (u16, u16) = (9527, 9537);
 pub const DEFAULT_HEARTBEAT_SEC: u64 = 45;
 pub const MIN_HEARTBEAT_SEC: u64 = 15;
+pub const TOKEN_FILE_NAME: &str = ".pet_ws_token";
 const TOKEN_PREFIX: &str = "pet_tk_";
 
 /// Derives the per-process bus token from OS-seeded randomness.
@@ -59,6 +60,7 @@ pub struct IncomingWsPacket {
 
 pub struct WsCommandBroker {
     expected_token: String,
+    token_path: Option<PathBuf>,
     pub bound_port: AtomicU16,
     pub heartbeat_timeout_sec: AtomicU64,
     pub client_count: AtomicUsize,
@@ -66,16 +68,43 @@ pub struct WsCommandBroker {
 }
 
 impl WsCommandBroker {
-    pub fn init_with_token_file(token_path: PathBuf) -> Arc<Self> {
+    /// Builds the broker, writing the bus token to the first candidate that accepts it.
+    ///
+    /// Candidates are tried in order because the working directory is not always
+    /// writable: a per-machine install runs from `Program Files`, where a standard user
+    /// cannot create files. A token that is never written leaves the bus looking healthy
+    /// while no client can authenticate, so the caller passes a per-user location as a
+    /// fallback and this reports the case where even that fails.
+    pub fn init_with_token_candidates(candidates: &[PathBuf]) -> Arc<Self> {
         let token = generate_token();
-        let _ = fs::write(&token_path, &token);
+        let mut token_path = None;
+        for candidate in candidates {
+            if let Some(dir) = candidate.parent() {
+                let _ = fs::create_dir_all(dir);
+            }
+            if fs::write(candidate, &token).is_ok() {
+                token_path = Some(candidate.clone());
+                break;
+            }
+        }
+        if token_path.is_none() {
+            eprintln!(
+                "[ws_server] no writable location for {TOKEN_FILE_NAME}; clients cannot authenticate"
+            );
+        }
         Arc::new(Self {
             expected_token: token,
+            token_path,
             bound_port: AtomicU16::new(DEFAULT_WS_PORT_RANGE.0),
             heartbeat_timeout_sec: AtomicU64::new(DEFAULT_HEARTBEAT_SEC),
             client_count: AtomicUsize::new(0),
             clients: Mutex::new(HashMap::new()),
         })
+    }
+
+    /// Where the token was written, so the same location can be cleaned up on exit.
+    pub fn token_path(&self) -> Option<&Path> {
+        self.token_path.as_deref()
     }
 
     /// Single authentication gate for the bus. Every inbound packet must present the
@@ -436,7 +465,7 @@ mod tests {
 
     fn broker_with_token(name: &str) -> Arc<WsCommandBroker> {
         let path = std::env::temp_dir().join(format!("desktop-pet-host-{name}.token"));
-        WsCommandBroker::init_with_token_file(path)
+        WsCommandBroker::init_with_token_candidates(&[path])
     }
 
     #[test]
@@ -527,9 +556,43 @@ mod tests {
     #[test]
     fn token_is_written_to_the_supplied_path() {
         let path = std::env::temp_dir().join("desktop-pet-host-written.token");
-        let broker = WsCommandBroker::init_with_token_file(path.clone());
+        let broker = WsCommandBroker::init_with_token_candidates(std::slice::from_ref(&path));
         let on_disk = std::fs::read_to_string(&path).expect("token file");
         assert_eq!(on_disk.trim(), broker.expected_token);
+        assert_eq!(broker.token_path(), Some(path.as_path()));
+    }
+
+    #[test]
+    fn a_token_that_cannot_be_written_beside_the_working_directory_moves_on() {
+        // `Program Files` is read-only for a standard user, and the working directory of
+        // an installed build is exactly there. A candidate whose parent is a file stands
+        // in for that here, because writing through it cannot succeed either.
+        let dir = std::env::temp_dir();
+        let blocker = dir.join("desktop-pet-host-not-a-directory");
+        std::fs::write(&blocker, b"file, not a directory").expect("blocker file");
+        let unwritable = blocker.join(TOKEN_FILE_NAME);
+        let fallback = dir.join("desktop-pet-host-fallback.token");
+
+        let broker = WsCommandBroker::init_with_token_candidates(&[unwritable, fallback.clone()]);
+
+        assert_eq!(broker.token_path(), Some(fallback.as_path()));
+        assert_eq!(
+            std::fs::read_to_string(&fallback)
+                .expect("fallback token file")
+                .trim(),
+            broker.expected_token
+        );
+    }
+
+    #[test]
+    fn no_writable_candidate_leaves_the_token_unplaced() {
+        let dir = std::env::temp_dir();
+        let blocker = dir.join("desktop-pet-host-not-a-directory-either");
+        std::fs::write(&blocker, b"file, not a directory").expect("blocker file");
+
+        let broker = WsCommandBroker::init_with_token_candidates(&[blocker.join("token")]);
+
+        assert_eq!(broker.token_path(), None);
     }
 
     fn header(value: &str) -> HeaderValue {
