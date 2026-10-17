@@ -41,6 +41,7 @@ import type {
   DesktopWindowState,
   HitAreaDef,
   MenuItemSchema,
+  SduiSchema,
 } from '@/types/pet';
 import { CLICK_DRAG_THRESHOLD_PX, HUD_HOVER_GRACE_MS, STAGE_HEIGHT_PX, STAGE_WIDTH_PX } from '@/constants/timing';
 import { FALLBACK_HIT_AREA_TEXT, STAGE_MESSAGES } from '@/constants/messages';
@@ -416,6 +417,25 @@ onMounted(async () => {
       await listen<{ event: string; payload: Record<string, unknown> }>(
         'internal-menu-action',
         (ev) => void petStore.handleInternalEvent(ev.payload.event, ev.payload.payload || {})
+      )
+    );
+    unlistenFns.push(
+      await listen<{ mode?: string; title?: string; url?: string; schema?: SduiSchema }>(
+        'panel-request',
+        // Reached when a panel action arrived through Rust — a client that called
+        // `execute_pet_action` with `type: "panel"`. Routing it through the store's normal
+        // action path means a panel opened this way behaves exactly like a menu item that
+        // names one, including the wait-for-ready handshake with the companion window.
+        (ev) => {
+          const p = ev.payload;
+          void petStore.dispatchPetAction({
+            type: 'panel',
+            mode: p.mode === 'url' ? 'url' : 'schema',
+            title: p.title,
+            url: p.url,
+            schema: p.schema,
+          });
+        }
       )
     );
     unlistenFns.push(

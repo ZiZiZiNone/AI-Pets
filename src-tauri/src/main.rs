@@ -5,7 +5,7 @@ mod engine_runner;
 mod win32_window;
 mod ws_server;
 
-use action_executor::{execute_general_pet_action, PetActionPayload};
+use action_executor::{execute_general_pet_action, PanelHost, PanelRequest, PetActionPayload};
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -452,12 +452,33 @@ fn save_host_settings(yaml_content: String) -> Result<(), String> {
     fs::write(config_dir.join("settings.yaml"), yaml_content).map_err(|e| e.to_string())
 }
 
+/// Opens panels on behalf of [`execute_general_pet_action`].
+///
+/// A panel request is handed to the stage window rather than emitted at the companion
+/// directly. That is deliberate: the companion may not exist yet, and the stage already owns
+/// the "give the companion its payload when it reports ready" handshake. Emitting at the
+/// companion from here would race that handshake and lose the schema for exactly the case
+/// panels are usually opened from — a menu item on a window that was never opened before.
+struct CompanionPanelHost<'a>(&'a AppHandle);
+
+impl PanelHost for CompanionPanelHost<'_> {
+    fn open_panel(&self, request: PanelRequest) -> Result<(), String> {
+        // Deliberately broadcast rather than shown: the stage window owns the pending
+        // payload and forwards it on `companion-ready`, and popping the pet up because a
+        // panel was requested would be a side effect nobody asked for.
+        self.0
+            .emit("panel-request", &request)
+            .map_err(|e| format!("面板请求无法送达界面: {}", e))
+    }
+}
+
 #[tauri::command]
 async fn execute_pet_action(
+    app: AppHandle,
     action: PetActionPayload,
     extra_args: Option<Vec<String>>,
 ) -> Result<String, String> {
-    execute_general_pet_action(&action, extra_args)
+    execute_general_pet_action(&action, extra_args, &CompanionPanelHost(&app))
 }
 
 /// Run a user-configured speech engine on behalf of the frontend.

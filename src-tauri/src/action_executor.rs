@@ -89,6 +89,65 @@ pub struct PetActionPayload {
     pub cwd: Option<String>,
     pub target: Option<String>,
     pub url: Option<String>,
+    /// `panel` only: which of the two panel sources to use.
+    pub mode: Option<String>,
+    /// `panel` only: heading shown above the panel.
+    pub title: Option<String>,
+    /// `panel` only: the SDUI description itself.
+    ///
+    /// Kept as an opaque JSON value on purpose. The host renders whatever the schema says
+    /// and never interprets it, so mirroring the widget union here would mean every new
+    /// widget type also had to be declared in Rust — and a payload that cannot carry its
+    /// schema is a panel that opens empty at the far end of a process boundary.
+    pub schema: Option<serde_json::Value>,
+}
+
+/// A panel the host has been asked to show, with its configuration already resolved.
+///
+/// Built from [`PetActionPayload`] so the two panel modes are decided here, once: an
+/// unrecognised `mode` becomes `schema` rather than travelling onward as a value nobody
+/// validates.
+#[derive(Debug, Serialize, Clone, PartialEq)]
+pub struct PanelRequest {
+    pub mode: String,
+    pub title: Option<String>,
+    pub url: Option<String>,
+    pub schema: Option<serde_json::Value>,
+}
+
+/// What showing a panel needs from the environment around the executor.
+///
+/// A trait rather than a direct `AppHandle` so the executor can be tested without a window:
+/// a test records the request and asserts on it, which is the only way to show that a schema
+/// survived the trip intact.
+pub trait PanelHost {
+    fn open_panel(&self, request: PanelRequest) -> Result<(), String>;
+}
+
+impl PanelRequest {
+    /// Resolve a payload into a request, refusing the combinations that would open a blank
+    /// panel: the mode decides which of `url` and `schema` is the one that must be present.
+    fn from_payload(action: &PetActionPayload) -> Result<Self, String> {
+        let mode = match action.mode.as_deref() {
+            Some("url") => "url",
+            _ => "schema",
+        };
+        let request = Self {
+            mode: mode.to_string(),
+            title: action.title.clone(),
+            url: action.url.clone(),
+            schema: action.schema.clone(),
+        };
+        match mode {
+            "url" if request.url.as_deref().unwrap_or("").is_empty() => {
+                Err("Panel action with mode 'url' has no url".into())
+            }
+            "schema" if request.schema.is_none() => {
+                Err("Panel action with mode 'schema' has no schema".into())
+            }
+            _ => Ok(request),
+        }
+    }
 }
 
 /// Run an action that a client may request over the bus.
@@ -158,9 +217,14 @@ pub fn open_target_in_os(target: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Run a general (non-whitelisted) pet action.
+///
+/// `panel_host` is the way back to the interface for actions that need one; it is a
+/// parameter rather than a global so a test can supply a recorder.
 pub fn execute_general_pet_action(
     action: &PetActionPayload,
     extra_args: Option<Vec<String>>,
+    panel_host: &dyn PanelHost,
 ) -> Result<String, String> {
     match action.action_type.as_str() {
         "open" | "url" => {
@@ -171,6 +235,15 @@ pub fn execute_general_pet_action(
                 .unwrap_or(".");
             open_target_in_os(target)?;
             Ok(format!("已打开目标：{}", target))
+        }
+        "panel" => {
+            let request = PanelRequest::from_payload(action)?;
+            let label = request
+                .title
+                .clone()
+                .unwrap_or_else(|| request.mode.clone());
+            panel_host.open_panel(request)?;
+            Ok(format!("面板已打开：{}", label))
         }
         "exec" => {
             let raw_cmd = action.command.as_deref().unwrap_or("python");
@@ -578,6 +651,179 @@ mod tests {
         );
     }
 
+    /// Records what a panel request carried, so a test can prove nothing was dropped.
+    #[derive(Default)]
+    struct RecordingPanelHost {
+        requests: std::cell::RefCell<Vec<PanelRequest>>,
+        fail_with: Option<String>,
+    }
+
+    impl RecordingPanelHost {
+        fn refusing(reason: &str) -> Self {
+            Self {
+                requests: std::cell::RefCell::new(Vec::new()),
+                fail_with: Some(reason.to_string()),
+            }
+        }
+
+        fn last(&self) -> PanelRequest {
+            self.requests
+                .borrow()
+                .last()
+                .cloned()
+                .expect("a panel request was recorded")
+        }
+
+        fn count(&self) -> usize {
+            self.requests.borrow().len()
+        }
+    }
+
+    impl PanelHost for RecordingPanelHost {
+        fn open_panel(&self, request: PanelRequest) -> Result<(), String> {
+            self.requests.borrow_mut().push(request);
+            match &self.fail_with {
+                Some(reason) => Err(reason.clone()),
+                None => Ok(()),
+            }
+        }
+    }
+
+    /// A payload with every optional field set to `None`, for the cases a test does not care
+    /// about. Built through JSON so it stays in step with the serde field list.
+    fn panel_payload(fields: serde_json::Value) -> PetActionPayload {
+        let mut base = serde_json::json!({ "type": "panel" });
+        let map = base.as_object_mut().expect("object");
+        for (key, value) in fields.as_object().expect("object") {
+            map.insert(key.clone(), value.clone());
+        }
+        serde_json::from_value(base).expect("panel payload")
+    }
+
+    #[test]
+    fn a_panel_action_carries_its_schema_across_the_boundary() {
+        // The defect this covers: `PetActionPayload` had no `schema` field, so a client that
+        // sent one had it dropped by serde and the panel opened empty at the far end — with
+        // no error to explain why.
+        let schema = serde_json::json!({
+            "title": "外部载荷控制台",
+            "widgets": [
+                { "id": "voice_gain", "type": "slider", "label": "语音增益", "value": 40 },
+                { "id": "note", "type": "text_input", "label": "备注", "value": "" },
+            ],
+        });
+        let payload = panel_payload(serde_json::json!({
+            "mode": "schema",
+            "title": "外部载荷控制台",
+            "schema": schema,
+        }));
+        let host = RecordingPanelHost::default();
+
+        assert_eq!(
+            execute_general_pet_action(&payload, None, &host).unwrap(),
+            "面板已打开：外部载荷控制台"
+        );
+
+        let request = host.last();
+        assert_eq!(request.mode, "schema");
+        assert_eq!(request.title.as_deref(), Some("外部载荷控制台"));
+        assert_eq!(
+            request.schema,
+            Some(schema.clone()),
+            "schema arrived changed"
+        );
+        assert_eq!(
+            request.schema.unwrap()["widgets"][1]["type"],
+            "text_input",
+            "the widget union must cross unchanged, not be reinterpreted"
+        );
+    }
+
+    #[test]
+    fn a_panel_action_without_a_mode_defaults_to_schema() {
+        let payload = panel_payload(serde_json::json!({
+            "schema": { "widgets": [{ "id": "a", "type": "toggle" }] },
+        }));
+        let host = RecordingPanelHost::default();
+        execute_general_pet_action(&payload, None, &host).unwrap();
+        assert_eq!(host.last().mode, "schema");
+    }
+
+    #[test]
+    fn an_unrecognised_panel_mode_is_not_forwarded_as_written() {
+        let payload = panel_payload(serde_json::json!({
+            "mode": "definitely_not_a_mode",
+            "schema": { "widgets": [] },
+        }));
+        let host = RecordingPanelHost::default();
+        execute_general_pet_action(&payload, None, &host).unwrap();
+        assert_eq!(
+            host.last().mode,
+            "schema",
+            "a mode nobody validates must not travel onward as written"
+        );
+    }
+
+    #[test]
+    fn a_url_panel_carries_its_url() {
+        let payload = panel_payload(serde_json::json!({
+            "mode": "url",
+            "url": "https://example.invalid/panel",
+        }));
+        let host = RecordingPanelHost::default();
+        execute_general_pet_action(&payload, None, &host).unwrap();
+        let request = host.last();
+        assert_eq!(request.mode, "url");
+        assert_eq!(
+            request.url.as_deref(),
+            Some("https://example.invalid/panel")
+        );
+        assert_eq!(request.schema, None);
+    }
+
+    #[test]
+    fn a_panel_missing_the_source_its_mode_needs_is_refused_before_anything_opens() {
+        for (fields, expected) in [
+            (
+                serde_json::json!({ "mode": "schema" }),
+                "mode 'schema' has no schema",
+            ),
+            (
+                serde_json::json!({ "mode": "url" }),
+                "mode 'url' has no url",
+            ),
+            (
+                serde_json::json!({ "mode": "url", "url": "" }),
+                "mode 'url' has no url",
+            ),
+            (
+                // The generic `url` field is for the `open`/`url` action types; a panel in
+                // url mode reads it too, so a bare `schema: null` must not pass as a source.
+                serde_json::json!({ "schema": null }),
+                "mode 'schema' has no schema",
+            ),
+        ] {
+            let host = RecordingPanelHost::default();
+            let error = execute_general_pet_action(&panel_payload(fields.clone()), None, &host)
+                .unwrap_err();
+            assert!(error.contains(expected), "for {fields}: {error}");
+            assert_eq!(host.count(), 0, "a refused panel must not reach the host");
+        }
+    }
+
+    #[test]
+    fn a_panel_host_failure_is_reported_rather_than_swallowed() {
+        // The window can be gone, or the frontend listener absent. The caller has to hear
+        // that, otherwise an external client is told the panel opened when nothing did.
+        let payload = panel_payload(serde_json::json!({
+            "mode": "schema",
+            "schema": { "widgets": [] },
+        }));
+        let host = RecordingPanelHost::refusing("no companion window");
+        let error = execute_general_pet_action(&payload, None, &host).unwrap_err();
+        assert!(error.contains("no companion window"), "{error}");
+    }
+
     #[test]
     fn unknown_action_type_is_dispatched_not_executed() {
         let payload = PetActionPayload {
@@ -587,9 +833,14 @@ mod tests {
             cwd: None,
             target: None,
             url: None,
+            mode: None,
+            title: None,
+            schema: None,
         };
-        assert!(execute_general_pet_action(&payload, None)
+        let host = RecordingPanelHost::default();
+        assert!(execute_general_pet_action(&payload, None, &host)
             .unwrap()
             .starts_with("动作 ["));
+        assert_eq!(host.count(), 0, "an unknown type must not touch the host");
     }
 }

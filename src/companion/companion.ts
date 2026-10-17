@@ -5,7 +5,7 @@ import { emit, listen } from '@tauri-apps/api/event';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import CompanionApp from './CompanionApp.vue';
 import './companion.css';
-import type { ActionPriority, MenuItemSchema, PetBridgeSDK } from '@/types/pet';
+import type { ActionPriority, MenuItemSchema, PetBridgeSDK, SduiSchema } from '@/types/pet';
 
 const eventListeners = new Set<(event: string, payload: unknown) => void>();
 const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1']);
@@ -72,6 +72,33 @@ const petBridge: PetBridgeSDK = {
   panel: {
     async close() {
       await getCurrentWebviewWindow().hide();
+    },
+
+    /**
+     * Ask the host to show a panel described here.
+     *
+     * The schema crosses into Rust unchanged, which is the whole point of the call: panel
+     * content the host cannot see (anything not shipped with the app) has no other way to
+     * open a panel of its own. Rust resolves the mode and refuses a request that names
+     * neither a schema nor a url, so a mistake comes back as an error instead of a blank
+     * window.
+     */
+    async open(options: {
+      mode?: 'schema' | 'url';
+      title?: string;
+      url?: string;
+      schema?: SduiSchema;
+    }): Promise<string> {
+      return invoke<string>('execute_pet_action', {
+        action: {
+          type: 'panel',
+          mode: options.mode || 'schema',
+          title: options.title,
+          url: options.url,
+          schema: options.schema,
+        },
+        extraArgs: null,
+      });
     },
   },
 };

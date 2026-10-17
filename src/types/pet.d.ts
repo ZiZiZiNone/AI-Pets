@@ -535,6 +535,12 @@ export interface PetBridgeSDK {
   };
   panel: {
     close(): Promise<void>;
+    open(options: {
+      mode?: 'schema' | 'url';
+      title?: string;
+      url?: string;
+      schema?: SduiSchema;
+    }): Promise<string>;
   };
 }
 
