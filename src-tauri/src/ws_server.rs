@@ -14,6 +14,7 @@ use tokio::net::TcpListener;
 use tokio::sync::{mpsc, Mutex};
 use tokio_tungstenite::accept_hdr_async;
 use tokio_tungstenite::tungstenite::handshake::server::{Request, Response};
+use tokio_tungstenite::tungstenite::http::HeaderValue;
 use tokio_tungstenite::tungstenite::Message;
 
 pub const DEFAULT_WS_PORT_RANGE: (u16, u16) = (9527, 9537);
@@ -108,6 +109,60 @@ impl WsCommandBroker {
     }
 }
 
+/// Decides whether a handshake `Origin` header may open a bus connection.
+///
+/// The gate keeps web pages off the bus: a page served from an origin this host does
+/// not own must not be able to open a socket. Comparing the raw string with
+/// `starts_with` cannot express that, because `http://localhost.attacker.test` starts
+/// with `http://localhost`; the authority has to be parsed and its host compared
+/// exactly.
+///
+/// Whether a header is present at all is the caller's business. A caller that finds no
+/// `Origin` header should allow the request: that is not a browser, and every
+/// non-browser client still has to present the bus token.
+fn origin_is_allowed(origin: &HeaderValue) -> bool {
+    let Ok(origin) = origin.to_str() else {
+        // Not visible ASCII, so not a value a browser produced.
+        return false;
+    };
+    let origin = origin.trim();
+    if origin.is_empty() {
+        return true;
+    }
+
+    let Some((scheme, rest)) = origin.split_once("://") else {
+        return false;
+    };
+
+    // The authority ends at the first path, query or fragment delimiter.
+    let authority = match rest.find(['/', '?', '#']) {
+        Some(end) => &rest[..end],
+        None => rest,
+    };
+
+    // Browsers never put userinfo in `Origin`, but `http://localhost@evil.test` would
+    // otherwise read as host `localhost`. Keep the part after the last `@`.
+    let authority = match authority.rfind('@') {
+        Some(at) => &authority[at + 1..],
+        None => authority,
+    };
+
+    // Strip an optional port. No entry in the allow-list is a bracketed IPv6 literal,
+    // so a colon left in the authority can only separate a port, and a port is a run of
+    // digits: `localhost:1420.attacker.test` names no host this host owns.
+    let (host, port) = authority.split_once(':').unwrap_or((authority, ""));
+    if !port.chars().all(|c| c.is_ascii_digit()) {
+        return false;
+    }
+
+    let scheme_is = |s: &str| scheme.eq_ignore_ascii_case(s);
+    let host_is = |h: &str| host.eq_ignore_ascii_case(h);
+
+    (scheme_is("http") && (host_is("localhost") || host_is("127.0.0.1")))
+        || (scheme_is("tauri") && host_is("localhost"))
+        || (scheme_is("https") && host_is("tauri.localhost"))
+}
+
 pub async fn start_ws_server(app: AppHandle, port_range: (u16, u16), broker: Arc<WsCommandBroker>) {
     let start_port = port_range.0.max(1024);
     let end_port = port_range.1.max(start_port);
@@ -150,13 +205,7 @@ pub async fn start_ws_server(app: AppHandle, port_range: (u16, u16), broker: Arc
             #[allow(clippy::result_large_err)]
             let callback = |req: &Request, response: Response| {
                 if let Some(origin) = req.headers().get("Origin") {
-                    let origin_str = origin.to_str().unwrap_or("");
-                    if !origin_str.is_empty()
-                        && !origin_str.starts_with("http://localhost")
-                        && !origin_str.starts_with("tauri://localhost")
-                        && !origin_str.starts_with("http://127.0.0.1")
-                        && !origin_str.starts_with("https://tauri.localhost")
-                    {
+                    if !origin_is_allowed(origin) {
                         let mut err_res = tokio_tungstenite::tungstenite::http::Response::new(
                             Some("Forbidden Origin".to_string()),
                         );
@@ -481,5 +530,76 @@ mod tests {
         let broker = WsCommandBroker::init_with_token_file(path.clone());
         let on_disk = std::fs::read_to_string(&path).expect("token file");
         assert_eq!(on_disk.trim(), broker.expected_token);
+    }
+
+    fn header(value: &str) -> HeaderValue {
+        HeaderValue::from_str(value).expect("valid header value")
+    }
+
+    #[test]
+    fn the_declared_origins_are_allowed() {
+        for value in [
+            "http://localhost",
+            "http://localhost:1420",
+            "http://localhost:1420/",
+            "tauri://localhost",
+            "http://127.0.0.1:9527",
+            "https://tauri.localhost",
+            "HTTP://LOCALHOST:1420",
+            "",
+        ] {
+            assert!(origin_is_allowed(&header(value)), "should allow {value:?}");
+        }
+    }
+
+    #[test]
+    fn a_host_that_merely_starts_with_an_allowed_one_is_rejected() {
+        // Every one of these begins with an allowed origin as a raw string, which is
+        // all the previous `starts_with` check looked at. An attacker who owns a
+        // domain can serve a page from `localhost.<their-domain>` and have the browser
+        // send exactly that Origin.
+        for value in [
+            "http://localhost.attacker.test",
+            "http://localhost.attacker.test:1420",
+            "https://tauri.localhost.attacker.test",
+            "http://127.0.0.1.attacker.test",
+            "http://localhost:1420.attacker.test",
+        ] {
+            assert!(
+                !origin_is_allowed(&header(value)),
+                "should reject {value:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn userinfo_cannot_masquerade_as_a_local_host() {
+        // Reads as host `localhost` to anything that scans rather than parses.
+        assert!(!origin_is_allowed(&header(
+            "http://localhost@attacker.test"
+        )));
+    }
+
+    #[test]
+    fn origins_outside_the_declared_set_are_rejected() {
+        for value in [
+            "https://attacker.test",
+            "http://example.com",
+            "https://localhost", // Tauri serves http on localhost, never https
+            "http://127.0.0.2",
+            "null", // opaque origin, e.g. a sandboxed iframe
+            "file://",
+        ] {
+            assert!(
+                !origin_is_allowed(&header(value)),
+                "should reject {value:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_header_that_is_not_visible_ascii_is_not_trusted() {
+        let value = HeaderValue::from_bytes(&[0xff, 0xfe]).expect("opaque header value");
+        assert!(!origin_is_allowed(&value));
     }
 }
