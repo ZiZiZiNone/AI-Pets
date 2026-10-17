@@ -163,6 +163,14 @@ export interface ScheduledPetTask {
   quickReplies?: QuickReplyChip[];
 }
 
+/**
+ * Result of asking the store to switch pets.
+ *
+ * A refusal has to be observable: the id may come from a menu entry or from an external
+ * client, and neither should be told the switch happened when no such pet is installed.
+ */
+export type PetSwitchOutcome = { ok: true } | { ok: false; reason: string };
+
 export interface DesktopWindowState {
   has_foreground_window: boolean;
   is_fullscreen: boolean;

@@ -53,6 +53,9 @@ export const STAGE_MESSAGES = {
     `💠 [${name}] 已激活！右键展开陀螺仪战术翼，或点击 💬/🧬 体验养成与四大机体切换。`,
   petSwitched: (name: string, themeName: string) =>
     `🧬 机体跃迁完成：已装载【${name}】// 主题切换至 ${themeName}！`,
+  petNotInstalled: (petId: string) =>
+    `❗ 无法切换到【${petId}】：pets/ 下没有这个宠物包（需要 ${petId}/pet.yaml），已保持当前宠物。`,
+  petSwitchWithoutId: '❗ 无法切换宠物：这次请求里没有带宠物 id。',
   petManifestPersisted: (petId: string) => `💾 蓝图校准已持久化写入 pets/${petId}/pet.yaml！`,
   petManifestLiveOnly: (scale: number) => `💾 蓝图参数已实时生效（Scale: ${scale}x）！`,
   externalMenuMounted: (appId: string) => `🔌 外部应用 [${appId}] 已挂载战术菜单！右键星盘即可调用。`,

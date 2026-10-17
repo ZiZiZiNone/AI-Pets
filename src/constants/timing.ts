@@ -153,6 +153,14 @@ export const COMPANION_STATUS_RESET_MS = 2000;
 /** Display window for a reply surfaced by the LLM connectivity probe. */
 export const LLM_REPLY_BUBBLE_MS = 4500;
 
+/**
+ * How long a refused pet switch stays on the bubble.
+ *
+ * Longer than a routine status line: the message names an id the user has to go look up
+ * under `pets/`, so it must not disappear mid-read.
+ */
+export const PET_SWITCH_FAILURE_MS = 6000;
+
 /** Radial menu geometry. */
 export const RADIAL_MENU_RADIUS_X_PX = 122;
 export const RADIAL_MENU_RADIUS_Y_PX = 114;

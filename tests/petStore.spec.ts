@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
 import { usePetStore } from '@/store/petStore';
+import { STAGE_MESSAGES } from '@/constants/messages';
 import type { PetManifest, ScheduledPetTask } from '@/types/pet';
 
 function task(overrides: Partial<ScheduledPetTask> = {}): ScheduledPetTask {
@@ -237,11 +238,58 @@ describe('petStore derived state', () => {
     expect(store.activeTheme.id).toBe('arcane_astrolabe');
   });
 
-  it('ignores switching to a pet that is not installed', () => {
+  it('refuses a pet that is not installed, and names it on the bubble', () => {
+    // This used to be "ignores switching to a pet that is not installed": the store returned
+    // early and every caller read the silence as success. A menu entry naming a pet that is
+    // not on disk looked like a dead item, and an external switch request was acknowledged
+    // with `status: "ok"` while nothing happened.
     const store = usePetStore();
+    store.availablePets = [manifest('aether_mecha_core', 'cyber_tactical')];
     const before = store.currentPet?.id;
-    store.switchPetById('not_installed');
+
+    const outcome = store.switchPetById('not_installed');
+
+    expect(outcome.ok).toBe(false);
+    expect(outcome).toMatchObject({ ok: false, reason: expect.stringContaining('not_installed') });
     expect(store.currentPet?.id).toBe(before);
+    expect(store.bubbleText).toContain('not_installed');
+  });
+
+  it('reports a switch request that carries no pet id at all', () => {
+    const store = usePetStore();
+
+    const outcome = store.switchPetById('');
+
+    expect(outcome.ok).toBe(false);
+    expect(store.bubbleText).toBe(STAGE_MESSAGES.petSwitchWithoutId);
+  });
+
+  it('announces a successful switch to an installed pet', () => {
+    const store = usePetStore();
+    store.availablePets = [
+      manifest('aether_mecha_core', 'cyber_tactical'),
+      manifest('nyx_abyssal_familiar', 'arcane_astrolabe'),
+    ];
+
+    const outcome = store.switchPetById('nyx_abyssal_familiar');
+
+    expect(outcome).toEqual({ ok: true });
+    expect(store.currentPet?.id).toBe('nyx_abyssal_familiar');
+    expect(store.bubbleText).not.toContain('无法切换');
+  });
+
+  it('leaves an already-switched pet in place when a later switch is refused', () => {
+    const store = usePetStore();
+    store.availablePets = [
+      manifest('aether_mecha_core', 'A'),
+      manifest('nyx_abyssal_familiar', 'N'),
+    ];
+    store.switchPetById('nyx_abyssal_familiar');
+
+    store.switchPetById('ghost_pet');
+
+    expect(store.active_pet_id).toBe('nyx_abyssal_familiar');
+    expect(store.currentPet?.id).toBe('nyx_abyssal_familiar');
   });
 
   it('merges pet, global and external menus into one tree', () => {

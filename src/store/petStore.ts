@@ -14,6 +14,7 @@ import type {
   PetActionConfig,
   PetManifest,
   PetStatsState,
+  PetSwitchOutcome,
   PetThemePalette,
   PomodoroState,
   QuickReplyChip,
@@ -54,6 +55,7 @@ import {
   COMMAND_HISTORY_LIMIT,
   DEFAULT_ACTION_DURATION_MS,
   MIN_ACTION_DURATION_MS,
+  PET_SWITCH_FAILURE_MS,
   STREAMING_HOLD_MS,
   VOICE_GAIN_PERCENT_SCALE,
 } from '@/constants/timing';
@@ -440,9 +442,27 @@ export const usePetStore = defineStore('petStore', () => {
     careStore.stopPomodoro();
   }
 
-  function switchPetById(petId: string): void {
+  /**
+   * Switch the active pet, reporting the outcome to the caller *and* on the bubble.
+   *
+   * It used to return nothing and return early when the id was not among the loaded pets.
+   * Every caller treated that as success: a menu entry naming a pet that is not installed
+   * looked like a dead item rather than a mistake, and an external switch request was
+   * acknowledged with `status: "ok"` while the interface did nothing. The failure now
+   * announces itself in the same place the success message does.
+   */
+  function switchPetById(petId: string): PetSwitchOutcome {
+    if (!petId) {
+      const reason = STAGE_MESSAGES.petSwitchWithoutId;
+      announcePetSwitchFailure(reason);
+      return { ok: false, reason };
+    }
     const target = availablePets.value.find((p) => p.id === petId);
-    if (!target) return;
+    if (!target) {
+      const reason = STAGE_MESSAGES.petNotInstalled(petId);
+      announcePetSwitchFailure(reason);
+      return { ok: false, reason };
+    }
     currentPet.value = target;
     active_pet_id.value = target.id;
     void dispatchPatch({ active_pet_id: target.id });
@@ -452,6 +472,17 @@ export const usePetStore = defineStore('petStore', () => {
       expression: 'smile',
       text: STAGE_MESSAGES.petSwitched(target.name, activeTheme.value.name),
       durationMs: 3800,
+    });
+    return { ok: true };
+  }
+
+  function announcePetSwitchFailure(reason: string): void {
+    scheduleAction({
+      priority: 'P1',
+      motion: 'idle',
+      expression: 'surprised',
+      text: reason,
+      durationMs: PET_SWITCH_FAILURE_MS,
     });
   }
 

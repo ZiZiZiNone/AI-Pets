@@ -221,12 +221,18 @@ pub async fn start_ws_server(app: AppHandle, port_range: (u16, u16), broker: Arc
     broker.bound_port.store(active_port, Ordering::Relaxed);
     let mut next_conn_id: usize = 1;
 
+    // Resolved once, not per request: `pets/` does not move while the host runs, and every
+    // switch request needs the same answer. It is also what makes a switch to an uninstalled
+    // pet fail with a reason instead of being accepted and dropped by the interface.
+    let pets_dir = std::sync::Arc::new(crate::resolve_project_dir("pets"));
+
     while let Ok((stream, _)) = listener.accept().await {
         let conn_id = next_conn_id;
         next_conn_id += 1;
 
         let app_clone = app.clone();
         let broker_clone = broker.clone();
+        let pets_dir = pets_dir.clone();
 
         tokio::spawn(async move {
             // `accept_hdr_async` fixes this signature, so the large `Err` variant is
@@ -354,7 +360,7 @@ pub async fn start_ws_server(app: AppHandle, port_range: (u16, u16), broker: Arc
                         let mut action_result = String::from("queued");
                         if pkt.msg_type.as_deref() == Some("safe_action") {
                             if let Some(ref act) = pkt.action {
-                                match execute_whitelisted_action(act) {
+                                match execute_whitelisted_action(act, pets_dir.as_path()) {
                                     Ok(res) => action_result = res,
                                     Err(err) => {
                                         let _ = tx.send(Message::Text(

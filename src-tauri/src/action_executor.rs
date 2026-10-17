@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 use std::process::Command;
 
 /// Longest identifier accepted for a pet folder name.
@@ -17,6 +18,9 @@ pub const MAX_PET_ID_LEN: usize = 64;
 /// `银羽` is as valid a name as `silverfeather`. The id is only ever used as a lookup key
 /// and matched against a directory listing; it never reaches a shell or a path join, which
 /// is why the check is about shape rather than about a character allowlist.
+///
+/// Shape alone is not enough to accept a switch request, though: it says the id *could*
+/// name a folder, not that one is installed. [`ensure_pet_installed`] is the second half.
 pub fn validate_pet_id(pet_id: &str) -> Result<(), String> {
     if pet_id.is_empty() {
         return Err("Invalid pet_id: empty".into());
@@ -37,6 +41,30 @@ pub fn validate_pet_id(pet_id: &str) -> Result<(), String> {
         ));
     }
     Ok(())
+}
+
+/// Refuse a switch to a pet that is not installed, naming the id and the directory searched.
+///
+/// The id has already passed [`validate_pet_id`], so joining it cannot escape `pets_dir`:
+/// no separators, no `..`, no leading or trailing space. What is left to decide is whether
+/// a pet of that name is actually there, and the answer has to reach the caller as an error.
+/// Returning success for an unknown id moved the failure to the interface, where a missing
+/// pet was reported as nothing at all — the menu item looked inert rather than wrong.
+///
+/// "There" means `<pets_dir>/<id>/pet.yaml` exists, which is the same predicate
+/// `load_host_configs` uses to build the list the interface can switch between. A bare
+/// directory is not enough: it would pass a weaker check here and still be unswitchable,
+/// which is the same false success in a smaller costume.
+pub fn ensure_pet_installed(pets_dir: &Path, pet_id: &str) -> Result<(), String> {
+    if pets_dir.join(pet_id).join("pet.yaml").is_file() {
+        return Ok(());
+    }
+    Err(format!(
+        "Unknown pet_id '{}': no pet folder named that under {} \
+         (a pet folder is <id>/pet.yaml)",
+        pet_id.escape_debug(),
+        pets_dir.display()
+    ))
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -63,7 +91,15 @@ pub struct PetActionPayload {
     pub url: Option<String>,
 }
 
-pub fn execute_whitelisted_action(cmd: &SafeActionCommand) -> Result<String, String> {
+/// Run an action that a client may request over the bus.
+///
+/// `pets_dir` is the resolved `pets/` root — the directory the interface loads pet folders
+/// from — so a switch can be judged against what is actually installed rather than against
+/// a list compiled into the binary.
+pub fn execute_whitelisted_action(
+    cmd: &SafeActionCommand,
+    pets_dir: &Path,
+) -> Result<String, String> {
     match cmd {
         SafeActionCommand::OpenCompanion => Ok("action:open_companion".into()),
         SafeActionCommand::ToggleStudio => Ok("action:toggle_studio".into()),
@@ -88,6 +124,7 @@ pub fn execute_whitelisted_action(cmd: &SafeActionCommand) -> Result<String, Str
         }
         SafeActionCommand::SwitchPet { pet_id } => {
             validate_pet_id(pet_id)?;
+            ensure_pet_installed(pets_dir, pet_id)?;
             Ok(format!("pet:{}", pet_id))
         }
         SafeActionCommand::OpenOfficialDocs => {
@@ -188,6 +225,11 @@ fn build_command_with_python_fallback(program: &str, args: &[String]) -> Command
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use std::path::PathBuf;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static TEMP_SEQ: AtomicUsize = AtomicUsize::new(0);
 
     fn cmd(name: &str) -> SafeActionCommand {
         serde_json::from_value(serde_json::json!({ "action_id": name })).expect("unit variant")
@@ -198,8 +240,63 @@ mod tests {
             .expect("variant with params")
     }
 
+    /// A stand-in `pets/` root that removes itself, so tests leave no folders behind.
+    ///
+    /// Switch requests are judged against the real directory listing, so a test cannot use
+    /// an in-memory list: it has to create the folders it expects to be found. Each folder
+    /// gets a `pet.yaml`, because a folder without one is not a pet the interface can load.
+    struct PetsRoot {
+        path: PathBuf,
+    }
+
+    impl PetsRoot {
+        fn with(ids: &[&str]) -> Self {
+            let mut path = std::env::temp_dir();
+            path.push(format!(
+                "ai-pets-test-pets-{}-{}",
+                std::process::id(),
+                TEMP_SEQ.fetch_add(1, Ordering::Relaxed)
+            ));
+            fs::create_dir_all(&path).expect("pets root");
+            for id in ids {
+                Self::write_manifest(&path, id);
+            }
+            Self { path }
+        }
+
+        fn write_manifest(space: &Path, id: &str) {
+            let dir = space.join(id);
+            fs::create_dir_all(&dir).expect("pet folder");
+            fs::write(dir.join("pet.yaml"), format!("id: {id}\n")).expect("pet manifest");
+        }
+
+        /// A folder with the pet id as its name but no `pet.yaml` inside it.
+        fn with_empty_folder(&self, id: &str) {
+            fs::create_dir_all(self.path.join(id)).expect("empty folder");
+        }
+
+        /// A file, not a folder, with the pet id as its name.
+        fn with_file(&self, id: &str) {
+            fs::write(self.path.join(id), b"not a pet").expect("decoy file");
+        }
+    }
+
+    impl Drop for PetsRoot {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.path);
+        }
+    }
+
+    fn switch(pets_dir: &Path, pet_id: &str) -> Result<String, String> {
+        execute_whitelisted_action(
+            &cmd_with("switch_pet", serde_json::json!({ "pet_id": pet_id })),
+            pets_dir,
+        )
+    }
+
     #[test]
     fn unit_variants_execute() {
+        let pets = PetsRoot::with(&[]);
         let cases = [
             ("open_companion", "action:open_companion"),
             ("toggle_studio", "action:toggle_studio"),
@@ -211,12 +308,16 @@ mod tests {
             if expected.is_empty() {
                 continue; // opens a browser; covered by its own side-effecting path
             }
-            assert_eq!(execute_whitelisted_action(&cmd(name)).unwrap(), expected);
+            assert_eq!(
+                execute_whitelisted_action(&cmd(name), &pets.path).unwrap(),
+                expected
+            );
         }
     }
 
     #[test]
     fn allowed_emotions_are_accepted() {
+        let pets = PetsRoot::with(&[]);
         for emotion in [
             "idle",
             "happy",
@@ -231,7 +332,7 @@ mod tests {
         ] {
             let action = cmd_with("switch_emotion", serde_json::json!({ "emotion": emotion }));
             assert_eq!(
-                execute_whitelisted_action(&action).unwrap(),
+                execute_whitelisted_action(&action, &pets.path).unwrap(),
                 format!("emotion:{emotion}")
             );
         }
@@ -241,9 +342,10 @@ mod tests {
     fn emotion_outside_the_whitelist_is_rejected() {
         // The whitelist is the security boundary for externally supplied identifiers,
         // so an unknown value must fail loudly rather than fall through.
+        let pets = PetsRoot::with(&[]);
         for emotion in ["", "HAPPY", "neutral; rm -rf /", "happy\nhappy"] {
             let action = cmd_with("switch_emotion", serde_json::json!({ "emotion": emotion }));
-            let err = execute_whitelisted_action(&action).unwrap_err();
+            let err = execute_whitelisted_action(&action, &pets.path).unwrap_err();
             assert!(
                 err.starts_with("Disallowed emotion identifier"),
                 "unexpected error for {emotion:?}: {err}"
@@ -252,29 +354,36 @@ mod tests {
     }
 
     #[test]
-    fn known_pets_are_accepted() {
+    fn installed_pets_are_accepted() {
+        let pets = PetsRoot::with(&[
+            "aether_mecha_core",
+            "demo_sprite_pet",
+            "nyx_abyssal_familiar",
+            "pulse_glitch_phantom",
+        ]);
         for pet in [
             "aether_mecha_core",
             "demo_sprite_pet",
             "nyx_abyssal_familiar",
             "pulse_glitch_phantom",
         ] {
-            let action = cmd_with("switch_pet", serde_json::json!({ "pet_id": pet }));
             assert_eq!(
-                execute_whitelisted_action(&action).unwrap(),
-                format!("pet:{pet}")
+                switch(&pets.path, pet).unwrap(),
+                format!("pet:{pet}"),
+                "{pet} exists under the pets root and must be switchable"
             );
         }
     }
 
     #[test]
-    fn a_pet_that_ships_later_is_switched_to_without_a_code_change() {
+    fn a_pet_added_as_a_folder_is_switched_to_without_a_code_change() {
         // The behaviour this replaces: only the four bundled ids resolved, so a pet added
         // as a folder could be selected from the interface but not from a menu action.
+        // These ids are deliberately absent from any list in the source.
+        let pets = PetsRoot::with(&["silverfeather_chibi", "My_Pet-2", "银羽"]);
         for pet in ["silverfeather_chibi", "My_Pet-2", "银羽"] {
-            let action = cmd_with("switch_pet", serde_json::json!({ "pet_id": pet }));
             assert_eq!(
-                execute_whitelisted_action(&action).unwrap(),
+                switch(&pets.path, pet).unwrap(),
                 format!("pet:{pet}"),
                 "a pet folder named {pet} must be addressable"
             );
@@ -282,10 +391,90 @@ mod tests {
     }
 
     #[test]
+    fn a_well_shaped_id_with_no_folder_is_refused_with_its_name() {
+        // The old hardcoded list accepted these four whatever the disk said. A shape check
+        // alone would accept them too, and `petStore.switchPetById` would then drop the
+        // request silently, leaving the interface to report success for nothing.
+        let pets = PetsRoot::with(&["silverfeather_chibi"]);
+        for pet in [
+            "aether_mecha_core",
+            "demo_sprite_pet",
+            "nyx_abyssal_familiar",
+            "pulse_glitch_phantom",
+            "ghost_pet",
+        ] {
+            let error = switch(&pets.path, pet).unwrap_err();
+            assert!(
+                error.starts_with(&format!("Unknown pet_id '{pet}'")),
+                "unexpected error for {pet:?}: {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_unknown_pet_message_names_the_directory_that_was_searched() {
+        // "unknown pet" without a location sends the user looking through the source; the
+        // resolved root is the one fact that turns the message into an instruction.
+        let pets = PetsRoot::with(&[]);
+        let error = switch(&pets.path, "ghost_pet").unwrap_err();
+        assert!(
+            error.contains(&pets.path.display().to_string()),
+            "the searched directory must appear in {error:?}"
+        );
+    }
+
+    #[test]
+    fn a_file_masquerading_as_a_pet_folder_does_not_satisfy_the_switch() {
+        let pets = PetsRoot::with(&[]);
+        pets.with_file("ghost_pet");
+        let error = switch(&pets.path, "ghost_pet").unwrap_err();
+        assert!(
+            error.starts_with("Unknown pet_id 'ghost_pet'"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn a_folder_without_a_manifest_is_not_a_switchable_pet() {
+        // The loader builds the interface's pet list from `<id>/pet.yaml`, so a bare folder
+        // is invisible to it. Accepting one here would acknowledge a switch the interface
+        // then refuses — the same false success, one directory level down.
+        let pets = PetsRoot::with(&[]);
+        pets.with_empty_folder("half_added_pet");
+        let error = switch(&pets.path, "half_added_pet").unwrap_err();
+        assert!(
+            error.starts_with("Unknown pet_id 'half_added_pet'"),
+            "unexpected error: {error}"
+        );
+
+        // Adding the manifest is the whole difference, so the same id then resolves.
+        PetsRoot::write_manifest(&pets.path, "half_added_pet");
+        assert_eq!(
+            switch(&pets.path, "half_added_pet").unwrap(),
+            "pet:half_added_pet"
+        );
+    }
+
+    #[test]
+    fn a_missing_pets_root_refuses_every_switch_instead_of_succeeding_blindly() {
+        // An installed build whose resources did not unpack has no `pets/` at all. Every
+        // switch must fail there; a validator that only checked the id shape would report
+        // success for all of them.
+        let missing = std::env::temp_dir().join(format!(
+            "ai-pets-test-absent-{}-{}",
+            std::process::id(),
+            TEMP_SEQ.fetch_add(1, Ordering::Relaxed)
+        ));
+        let error = switch(&missing, "silverfeather_chibi").unwrap_err();
+        assert!(error.starts_with("Unknown pet_id"), "{error}");
+    }
+
+    #[test]
     fn unknown_pet_is_rejected() {
         // `AETHER_MECHA_CORE` used to be on this list and is now accepted: it is a valid
         // folder name, and refusing it protected nothing. What must stay refused is
         // anything that could escape the pets directory or smuggle in a second path.
+        let pets = PetsRoot::with(&[]);
         for pet in [
             "",
             "../secrets",
@@ -299,13 +488,34 @@ mod tests {
             ".",
             "..",
         ] {
-            let action = cmd_with("switch_pet", serde_json::json!({ "pet_id": pet }));
-            let error = execute_whitelisted_action(&action).unwrap_err();
+            let error = switch(&pets.path, pet).unwrap_err();
             assert!(
                 error.starts_with("Invalid pet_id"),
                 "unexpected error for {pet:?}: {error}"
             );
         }
+    }
+
+    #[test]
+    fn a_traversal_attempt_cannot_reach_a_sibling_of_the_pets_root() {
+        // The shape check is what keeps `..` out of the join. Prove the two halves are
+        // ordered that way: a sibling directory that really exists must still be refused,
+        // because the id naming it is rejected before any lookup happens.
+        let pets = PetsRoot::with(&[]);
+        let sibling = pets.path.parent().expect("temp dir").join(format!(
+            "ai-pets-test-sibling-{}-{}",
+            std::process::id(),
+            TEMP_SEQ.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir_all(&sibling).expect("sibling dir");
+        let as_id = sibling
+            .file_name()
+            .expect("sibling name")
+            .to_string_lossy()
+            .to_string();
+        let error = switch(&pets.path, &format!("../{as_id}")).unwrap_err();
+        assert!(error.starts_with("Invalid pet_id"), "{error}");
+        let _ = fs::remove_dir_all(&sibling);
     }
 
     #[test]
@@ -322,23 +532,29 @@ mod tests {
         let error = validate_pet_id("pet\nid").unwrap_err();
         assert!(error.contains("\\n"), "{error}");
         assert!(!error.contains('\n'), "{error}");
+
+        let pets = PetsRoot::with(&[]);
+        let error = ensure_pet_installed(&pets.path, "pet\nid").unwrap_err();
+        assert!(error.contains("\\n"), "{error}");
+        assert!(!error.contains('\n'), "{error}");
     }
 
     #[test]
     fn pomodoro_falls_back_to_twenty_five_minutes() {
+        let pets = PetsRoot::with(&[]);
         assert_eq!(
-            execute_whitelisted_action(&cmd_with(
-                "start_pomodoro",
-                serde_json::json!({ "minutes": null })
-            ))
+            execute_whitelisted_action(
+                &cmd_with("start_pomodoro", serde_json::json!({ "minutes": null })),
+                &pets.path
+            )
             .unwrap(),
             "action:pomodoro:25"
         );
         assert_eq!(
-            execute_whitelisted_action(&cmd_with(
-                "start_pomodoro",
-                serde_json::json!({ "minutes": 45 })
-            ))
+            execute_whitelisted_action(
+                &cmd_with("start_pomodoro", serde_json::json!({ "minutes": 45 })),
+                &pets.path
+            )
             .unwrap(),
             "action:pomodoro:45"
         );
