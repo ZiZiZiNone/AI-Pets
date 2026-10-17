@@ -1,0 +1,6 @@
+[toolchain]
+# 与 .github/workflows/ci.yml 的 dtolnay/rust-toolchain@stable 保持一致：
+# 固定 channel 后，clippy 与 rustfmt 会随工具链一并安装，
+# 新克隆的机器无需手动 rustup component add 就能直接跑 cargo fmt / cargo clippy。
+channel = "stable"
+components = ["clippy", "rustfmt"]
