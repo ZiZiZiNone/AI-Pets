@@ -3,7 +3,7 @@
     <div
       v-if="petStore.radialMenuOpen"
       class="tactical-astrolabe-layer interactive-ui"
-      :style="[petStore.activeThemeCssVars, hubStyle]"
+      :style="petStore.activeThemeCssVars"
       @click.self="closeMenu"
     >
       <!-- SVG Counter-Rotating Gyroscopic Astrolabe & Laser Leader Lines -->
@@ -71,7 +71,7 @@
       </svg>
 
       <!-- Orbital Chamfered Tactical Wing Nodes -->
-      <div class="orbital-hub">
+      <div class="orbital-hub" :style="hubStyle">
         <button
           v-for="(item, idx) in primaryItems"
           :key="item.id"
@@ -84,7 +84,6 @@
           @click.stop="handlePrimaryClick(item)"
         >
           <span class="wing-index">0{{ idx + 1 }}</span>
-          <span class="wing-icon">{{ item.icon || '💠' }}</span>
           <span class="wing-label">{{ item.label }}</span>
           <span v-if="item.app_id" class="hotplug-beacon" title="外部热插拔应用菜单"></span>
         </button>
@@ -115,10 +114,9 @@
               v-for="(sub, sIdx) in activeSecondaryItems"
               :key="sub.id"
               class="subdeck-blade interactive-ui"
-              @click.stop="handleSubItemClick(sub)"
-            >
+              :class="{ badged: !!sub.badge }"
+              @click.stop="handleSubItemClick(sub)"            >
               <span class="blade-num">#{{ sIdx + 1 }}</span>
-              <span class="blade-icon">{{ sub.icon || '▸' }}</span>
               <span class="blade-text">{{ sub.label }}</span>
               <span v-if="sub.badge" class="blade-badge">{{ sub.badge }}</span>
             </button>
@@ -264,6 +262,13 @@ watch(
   to { transform: rotate(0deg); }
 }
 
+/**
+ * The hub is the only thing that sits at the menu centre. It used to inherit the
+ * `top/left` offset that positions it, but that binding was on the layer itself, where
+ * it overrode `inset: 0` and clipped the whole astrolabe to the bottom-right quadrant.
+ * The blade deck was then laid out in half the stage width, which is what made its
+ * labels unreadable. The offset now lives here, where it belongs.
+ */
 .orbital-hub {
   position: absolute;
   width: 0;
@@ -319,11 +324,6 @@ watch(
   font-family: "JetBrains Mono", Consolas, monospace;
 }
 
-.wing-icon {
-  font-size: 14px;
-  line-height: 1;
-}
-
 .wing-label {
   font-size: 11px;
   font-weight: 700;
@@ -365,7 +365,8 @@ watch(
   position: absolute;
   bottom: 8px;
   left: 10px;
-  right: 10px;
+  /* 右侧让出状态坞的宽度，否则展开的子面板会盖住那六个按钮 */
+  right: 76px;
   padding: 8px 10px;
   background: var(--theme-surface, rgba(9, 13, 24, 0.94));
   backdrop-filter: blur(16px);
@@ -412,7 +413,8 @@ watch(
 
 .subdeck-blade {
   display: flex;
-  align-items: center;
+  flex-wrap: wrap;
+  align-items: flex-start;
   gap: 6px;
   padding: 6px 8px;
   background: rgba(255, 255, 255, 0.04);
@@ -435,26 +437,38 @@ watch(
 .blade-num {
   font-size: 9px;
   opacity: 0.6;
+  line-height: 1.5;
   font-family: "JetBrains Mono", Consolas, monospace;
 }
 
-.blade-icon {
-  font-size: 13px;
-}
-
+/**
+ * Wrap instead of ellipsing, and never squeeze the label below six characters.
+ *
+ * The deck is two columns inside a 360px stage, so a single-line label had roughly
+ * 110px to work with and any real menu name was cut mid-character. Letting the label
+ * wrap keeps every declared action readable instead of hiding it behind a "…". The
+ * `min-width` floor matters because CJK can break between any two characters: without
+ * it a flex item happily collapses to one glyph per line.
+ */
 .blade-text {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  flex: 1 1 auto;
+  min-width: 6em;
+  line-height: 1.45;
+  overflow-wrap: break-word;
 }
 
+/**
+ * A tag such as OVERDRIVE shares the row but drops to its own line rather than
+ * narrowing the label next to it.
+ */
 .blade-badge {
+  flex: 0 0 auto;
   padding: 1px 4px;
   font-size: 8px;
   font-weight: 800;
   background: var(--theme-accent, #f43f5e);
   color: #ffffff;
   border-radius: 2px;
+  white-space: nowrap;
 }
 </style>

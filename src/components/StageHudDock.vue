@@ -8,6 +8,8 @@
           !petStore.bubbleText
         "
         class="holo-status-pill interactive-ui"
+        @mouseenter="emit('hud-hover', true)"
+        @mouseleave="emit('hud-hover', false)"
       >
         <span
           class="pill-level"
@@ -15,15 +17,15 @@
         >
           Lv.{{ petStore.stats.level }}
         </span>
-        <span class="pill-stat" title="好感度 Affinity">❤️ {{ petStore.stats.affinity }}%</span>
-        <span class="pill-stat" title="核心能量 Energy">⚡ {{ petStore.stats.energy }}%</span>
+        <span class="pill-stat" title="好感度 Affinity">好感 {{ petStore.stats.affinity }}%</span>
+        <span class="pill-stat" title="核心能量 Energy">能量 {{ petStore.stats.energy }}%</span>
         <button
           class="pill-pomo interactive-ui"
           :class="{ running: petStore.pomodoro.running }"
           title="点击切换番茄专注计时 (25m)"
           @click.stop="handlePomodoroPillClick"
         >
-          🍅 {{ petStore.formattedPomodoroTime }}
+          专注 {{ petStore.formattedPomodoroTime }}
         </button>
         <button
           class="pill-dnd interactive-ui"
@@ -31,7 +33,7 @@
           :title="petStore.dnd_mode ? '勿扰模式已开启 (点击关闭)' : '开启勿扰模式'"
           @click.stop="toggleDndMode"
         >
-          {{ petStore.dnd_mode ? '🔕' : '🔔' }}
+          {{ petStore.dnd_mode ? '免打扰' : '勿扰关' }}
         </button>
         <div class="pill-xp-track">
           <div class="pill-xp-fill" :style="{ width: `${petStore.xpProgressPercent}%` }"></div>
@@ -42,6 +44,8 @@
     <div
       v-if="(isCursorHoveringPet || petStore.quickChatOpen) && !petStore.studioOpen"
       class="tactical-dock interactive-ui"
+      @mouseenter="emit('hud-hover', true)"
+      @mouseleave="emit('hud-hover', false)"
     >
       <button
         class="tactical-dock-btn interactive-ui"
@@ -49,7 +53,7 @@
         title="展开双轨战术星盘 (右键 / Ctrl+M)"
         @click.stop="emit('toggle-radial')"
       >
-        <span>💠</span>
+        菜单
       </button>
       <button
         class="tactical-dock-btn interactive-ui"
@@ -57,35 +61,35 @@
         title="唤出内联智能对话与指令舱 (Ctrl+K)"
         @click.stop="toggleQuickChat"
       >
-        <span>💬</span>
+        对话
       </button>
       <button
         class="tactical-dock-btn interactive-ui"
-        title="投喂全息数据糖果 (+20⚡ / +8❤️)"
+        title="投喂全息数据糖果 (+20 能量 / +8 好感)"
         @click.stop="petStore.feedPetCareItem('全息数据糖果', 20, 8, 25)"
       >
-        <span>🍬</span>
+        投喂
       </button>
       <button
         class="tactical-dock-btn interactive-ui"
         title="打开空间神经突触伴生舱"
         @click.stop="openCompanionCenter"
       >
-        <span>🎛️</span>
+        伴生舱
       </button>
       <button
         class="tactical-dock-btn interactive-ui"
         title="切换下一机体模型"
         @click.stop="cycleNextPet"
       >
-        <span>🧬</span>
+        换宠物
       </button>
       <button
         class="tactical-dock-btn interactive-ui"
         title="CAD 全息蓝图校准工坊"
         @click.stop="petStore.studioOpen = !petStore.studioOpen"
       >
-        <span>📐</span>
+        校准
       </button>
     </div>
 
@@ -102,16 +106,16 @@
             class="slash-hint-item"
             @click.stop="applySlashHint(hint.command)"
           >
-            <span class="hint-cmd">{{ hint.icon }} {{ hint.usage }}</span>
+            <span class="hint-cmd">{{ hint.usage }}</span>
             <span class="hint-desc">{{ hint.description }}</span>
           </button>
         </div>
 
         <div class="chat-quick-tags">
-          <button @click.stop="runQuickCmd('/focus 25')">🍅 25m专注</button>
-          <button @click.stop="runQuickCmd('/fortune')">🔮 今日运势</button>
-          <button @click.stop="runQuickCmd('/feed')">🍬 投喂充能</button>
-          <button @click.stop="runQuickCmd('/sys')">💻 系统巡检</button>
+          <button @click.stop="runQuickCmd('/focus 25')">25m 专注</button>
+          <button @click.stop="runQuickCmd('/fortune')">今日运势</button>
+          <button @click.stop="runQuickCmd('/feed')">投喂充能</button>
+          <button @click.stop="runQuickCmd('/sys')">系统巡检</button>
         </div>
         <div class="chat-input-row">
           <input
@@ -156,6 +160,12 @@ defineProps<{
 
 const emit = defineEmits<{
   (e: 'toggle-radial'): void;
+  /**
+   * Reports whether the pointer is resting on host chrome. The stage cannot decide
+   * this from the sprite silhouette alone, so the dock has to say so; without it the
+   * pointer crossing the gap between sprite and dock looks like leaving the pet.
+   */
+  (e: 'hud-hover', over: boolean): void;
 }>();
 
 const petStore = usePetStore();
@@ -320,9 +330,16 @@ function cycleNextPet(): void {
 .pill-dnd {
   border: none;
   background: transparent;
-  font-size: 11px;
+  font-size: 9.5px;
+  font-weight: 700;
   cursor: pointer;
   padding: 0 2px;
+  white-space: nowrap;
+  color: #cbd5e1;
+}
+
+.pill-dnd.active {
+  color: var(--theme-accent, #f43f5e);
 }
 
 .pill-xp-track {
@@ -344,21 +361,35 @@ function cycleNextPet(): void {
 .tactical-dock {
   position: absolute;
   bottom: 14px;
-  right: 10px;
+  right: 6px;
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  align-items: stretch;
+  gap: 4px;
   z-index: 35;
 }
 
+/**
+ * Text chips rather than glyph buttons.
+ *
+ * These used to be single emoji in a 32px box. Two problems: the glyphs were rendered
+ * by whatever fallback font the machine had, so the set looked incoherent, and they
+ * were hardcoded in this component, which made restyling the dock a source edit. A
+ * short text label states the action outright, never truncates, and moves the whole
+ * dock into a range a person can aim at.
+ */
 .tactical-dock-btn {
-  width: 32px;
-  height: 28px;
+  width: 66px;
+  height: 22px;
   background: var(--theme-surface, rgba(9, 13, 24, 0.92));
   border: 1px solid var(--theme-border, rgba(56, 189, 248, 0.6));
   clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%);
   color: #f8fafc;
-  font-size: 13px;
+  font-family: inherit;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
   cursor: pointer;
   display: flex;
   align-items: center;

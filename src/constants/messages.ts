@@ -172,8 +172,20 @@ export const PET_ALIASES: Record<string, string> = {
   nova: 'demo_sprite_pet',
 };
 
-export const LLM_DEFAULT_SYSTEM_PROMPT = (name: string, description: string) =>
-  `你是桌面伴侣 ${name}（${description}）。请用简短有性格的中文（不超过60字）回复。`;
+/**
+ * System prompt assembly, split into a headline / traits / tail so a pet's persona can
+ * supply the middle without having to restate the output contract at both ends.
+ */
+export const LLM_SYSTEM_PROMPT_HEADLINE = (name: string, description: string) =>
+  description
+    ? `你是桌面伴侣 ${name}（${description}）。`
+    : `你是桌面伴侣 ${name}。`;
+
+export const LLM_SYSTEM_PROMPT_TRAITS = (traits: string[]) =>
+  `你的性格：${traits.join('、')}。`;
+
+export const LLM_SYSTEM_PROMPT_TAIL =
+  '回复要求：用简短有性格的中文，通常不超过 60 字；只依据当前画面与对话作答，看不清或不确定就直说，不编造。';
 
 export const LLM_MAX_TOKENS = 140;
 export const LLM_DEFAULT_MODEL = 'gpt-4o-mini';

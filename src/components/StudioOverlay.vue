@@ -136,13 +136,12 @@ import {
   HIT_AREA_ORIGIN_X,
   HIT_AREA_ORIGIN_Y,
   COPY_FEEDBACK_MS,
-  STUDIO_MAX_SCALE,
   STUDIO_MIN_BOX_SIZE_PX,
-  STUDIO_MIN_SCALE,
   STUDIO_ZOOM_STEP,
   STAGE_HEIGHT_PX,
   STAGE_WIDTH_PX,
 } from '@/constants/timing';
+import { applyStageWindowSize, clampStageScale } from '@/utils/stageWindow';
 
 const STAGE_CENTER_X = STAGE_WIDTH_PX / 2;
 const STAGE_CENTER_Y = STAGE_HEIGHT_PX / 2;
@@ -208,15 +207,17 @@ function getHitAreaScreenStyle(rect: RectDef): Record<string, string> {
   };
 }
 
+/**
+ * Zoom no longer stops where the sprite would overflow the window: the window is resized
+ * to follow, and only a floor and a desktop-sized ceiling bound it.
+ */
 function handleWheelZoom(e: WheelEvent): void {
   if (!petStore.currentPet) return;
   const delta = e.deltaY < 0 ? STUDIO_ZOOM_STEP : -STUDIO_ZOOM_STEP;
-  const nextScale = Math.min(
-    STUDIO_MAX_SCALE,
-    Math.max(STUDIO_MIN_SCALE, Number((currentScale.value + delta).toFixed(2)))
-  );
+  const nextScale = clampStageScale(Number((currentScale.value + delta).toFixed(2)));
   petStore.currentPet.model.scale = nextScale;
   props.onTransformChange(nextScale, currentOffset.value.x, currentOffset.value.y);
+  void applyStageWindowSize(nextScale);
 }
 
 /**
@@ -334,6 +335,7 @@ function resetTransform(): void {
   petStore.currentPet.model.scale = 1.0;
   petStore.currentPet.model.offset = { x: 0, y: 0 };
   props.onTransformChange(1.0, 0, 0);
+  void applyStageWindowSize(1.0);
 }
 
 function applyPreviewMotion(): void {

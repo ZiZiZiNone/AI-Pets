@@ -38,6 +38,18 @@ export const SQUASH_DECAY_PER_SEC = 9;
 /** Gesture thresholds. */
 export const CLICK_DRAG_THRESHOLD_PX = 6;
 export const LOOK_SMOOTHING_PER_SEC = 8;
+
+/**
+ * How long the HUD stays mounted after the cursor leaves the sprite silhouette.
+ *
+ * The sprite sits in the middle of the stage while the dock and status pill sit at its
+ * edges, so there is always dead space to cross. Hiding on the first off-sprite cursor
+ * event made those controls unreachable: the dock vanished before the pointer arrived,
+ * and because click-through is a whole-window flag the window had already stopped
+ * receiving mouse input. Re-arming this window on every cursor event means the HUD
+ * survives the crossing and only retires once the pointer has actually settled away.
+ */
+export const HUD_HOVER_GRACE_MS = 1200;
 export const MAX_FRAME_DELTA_SEC = 0.1;
 
 /** Alpha-mask sampling used for pixel-accurate click-through on the sprite adapter. */
@@ -99,10 +111,27 @@ export const HUD_ANIMATION_BOX = {
 
 /** Studio blueprint tuning. */
 export const STUDIO_ZOOM_STEP = 0.08;
-export const STUDIO_MIN_SCALE = 0.35;
-export const STUDIO_MAX_SCALE = 2.5;
+/**
+ * Zoom bounds. The floor keeps the pet from being scaled away to nothing; the ceiling
+ * is deliberately well past the point where the sprite fills the stage. Zooming is not
+ * limited by the window — the window is resized to fit the zoomed sprite, so there is no
+ * scale at which the pet is silently cropped.
+ */
+export const STUDIO_MIN_SCALE = 0.45;
+export const STUDIO_MAX_SCALE = 3;
 export const STUDIO_MIN_BOX_SIZE_PX = 16;
 export const COPY_FEEDBACK_MS = 1800;
+
+/**
+ * Headroom factor applied when sizing the stage window around a zoomed sprite.
+ *
+ * Covers the ground glow ring, the landing squash and the sliver of slack around the
+ * silhouette. 1.0 would be an exact fit that visibly crops the moment the pet squashes.
+ */
+export const STAGE_GROW_MARGIN = 1.15;
+
+/** Hard ceiling on the resized stage window, so a huge zoom cannot swallow the desktop. */
+export const STAGE_MAX_WINDOW_PX = 1280;
 
 /** Companion pod nudge geometry. */
 export const POD_NUDGE_STEP_PX = 8;

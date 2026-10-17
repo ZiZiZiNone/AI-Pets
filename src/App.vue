@@ -4,23 +4,27 @@
     :style="petStore.activeThemeCssVars"
     @mousedown="handleStageMouseDown"
     @mousemove="handleStageLocalMouseMove"
-    @mouseenter="isCursorHoveringPet = true"
+    @mouseenter="keepHudAlive"
+    @mouseleave="releaseHudSoon"
     @contextmenu.prevent="toggleRadialMenu"
   >
     <PetCanvasStage ref="stageRef" />
-    <SpeechBubble />
-    <RadialMenu />
-    <StudioOverlay :on-transform-change="handleStudioTransform" />
-    <StageHudDock
-      :is-cursor-hovering-pet="isCursorHoveringPet"
-      :is-drag-over="isDragOver"
-      @toggle-radial="toggleRadialMenu"
-    />
+    <div class="pet-ui-frame">
+      <SpeechBubble />
+      <RadialMenu />
+      <StudioOverlay :on-transform-change="handleStudioTransform" />
+      <StageHudDock
+        :is-cursor-hovering-pet="isCursorHoveringPet"
+        :is-drag-over="isDragOver"
+        @toggle-radial="toggleRadialMenu"
+        @hud-hover="handleHudHoverChange"
+      />
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue';
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { emit, listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
@@ -31,19 +35,22 @@ import StudioOverlay from '@/components/StudioOverlay.vue';
 import StageHudDock from '@/components/StageHudDock.vue';
 import { usePetStore } from '@/store/petStore';
 import { globalLipSync } from '@/utils/audioLipSync';
+import { applyStageWindowSize } from '@/utils/stageWindow';
 import type {
   ActionPriority,
   DesktopWindowState,
   HitAreaDef,
   MenuItemSchema,
 } from '@/types/pet';
-import { CLICK_DRAG_THRESHOLD_PX, STAGE_HEIGHT_PX, STAGE_WIDTH_PX } from '@/constants/timing';
+import { CLICK_DRAG_THRESHOLD_PX, HUD_HOVER_GRACE_MS, STAGE_HEIGHT_PX, STAGE_WIDTH_PX } from '@/constants/timing';
 import { FALLBACK_HIT_AREA_TEXT, STAGE_MESSAGES } from '@/constants/messages';
 
 const petStore = usePetStore();
 const stageRef = ref<InstanceType<typeof PetCanvasStage> | null>(null);
 
 const isCursorHoveringPet = ref<boolean>(true);
+const isCursorOverHud = ref<boolean>(false);
+let hoverGraceTimer: number | null = null;
 const isDragOver = ref<boolean>(false);
 const lastHitArea = ref<HitAreaDef | undefined>(undefined);
 const unlistenFns: UnlistenFn[] = [];
@@ -79,6 +86,62 @@ function isPanelOpen(): boolean {
   return petStore.studioOpen || petStore.radialMenuOpen || petStore.quickChatOpen;
 }
 
+/**
+ * Pin the HUD open and keep the window interactive.
+ *
+ * Visibility and click-through have to move together. `set_stage_click_through` is a
+ * whole-window flag, so any state where the dock is on screen must also be a state where
+ * the webview still receives mouse events, otherwise the controls render but cannot be
+ * pressed.
+ */
+function keepHudAlive(): void {
+  // A user who enabled click-through from the tray means it; never quietly undo that.
+  if (petStore.is_click_through) return;
+  if (hoverGraceTimer !== null) {
+    window.clearTimeout(hoverGraceTimer);
+    hoverGraceTimer = null;
+  }
+  isCursorHoveringPet.value = true;
+  void applyClickThrough(false);
+}
+
+/**
+ * Retract the HUD once the pointer has settled away from it.
+ *
+ * The timer is re-armed on every cursor event rather than only on the transition, so a
+ * pointer in flight keeps the dock mounted while it crosses the gap; only a pointer that
+ * stops outside both sprite and HUD retires it.
+ */
+function releaseHudSoon(): void {
+  if (isCursorOverHud.value || isPanelOpen() || petStore.quickChatOpen) return;
+  if (hoverGraceTimer !== null) window.clearTimeout(hoverGraceTimer);
+  hoverGraceTimer = window.setTimeout(() => {
+    hoverGraceTimer = null;
+    if (isCursorOverHud.value || isPanelOpen() || petStore.quickChatOpen) return;
+    isCursorHoveringPet.value = false;
+    void applyClickThrough(true);
+  }, HUD_HOVER_GRACE_MS);
+}
+
+function handleHudHoverChange(over: boolean): void {
+  isCursorOverHud.value = over;
+  if (over) {
+    keepHudAlive();
+  } else {
+    releaseHudSoon();
+  }
+}
+
+// A pet that ships with its own `model.scale` must not arrive inside a window sized for
+// the previous one, or it would be cropped until the user happened to touch the zoom.
+watch(
+  () => petStore.currentPet?.model.scale,
+  (scale) => {
+    if (typeof scale === 'number') void applyStageWindowSize(scale);
+  },
+  { immediate: true }
+);
+
 function toggleRadialMenu(): void {
   petStore.markUserActivity();
   petStore.radialMenuOpen = !petStore.radialMenuOpen;
@@ -92,7 +155,7 @@ function handleStageLocalMouseMove(e: MouseEvent): void {
   const hitRes = stageRef.value?.performHitTest(e.clientX, e.clientY);
   if (hitRes?.hit) {
     lastHitArea.value = hitRes.area;
-    isCursorHoveringPet.value = true;
+    keepHudAlive();
   }
 }
 
@@ -255,20 +318,22 @@ async function handleFilesDropped(paths: string[]): Promise<void> {
   await petStore.dispatchPetAction(action, paths);
 }
 
-async function handleCursorEvent(x: number, y: number): Promise<void> {
+function handleCursorEvent(x: number, y: number): void {
   stageRef.value?.lookAtCursor(x, y);
   if (petStore.is_click_through) return;
 
   if (isPanelOpen()) {
-    isCursorHoveringPet.value = true;
-    await applyClickThrough(false);
+    keepHudAlive();
     return;
   }
 
   const hit = stageRef.value?.performHitTest(x, y) ?? { hit: false, area: undefined };
   lastHitArea.value = hit.area;
-  isCursorHoveringPet.value = hit.hit;
-  await applyClickThrough(!hit.hit);
+  if (hit.hit) {
+    keepHudAlive();
+  } else {
+    releaseHudSoon();
+  }
 }
 
 onMounted(async () => {
@@ -382,5 +447,24 @@ onBeforeUnmount(() => {
   height: 100vh;
   overflow: hidden;
   background: transparent;
+}
+
+/**
+ * The chrome stays at its authored size while the sprite scales.
+ *
+ * The stage window grows with the pet's zoom, and this frame keeps the dock, pill,
+ * astrolabe and studio laid out around a fixed 360x420 box centred on the sprite. Without
+ * it every one of those is positioned against the window corners and would slide out to
+ * the far edge of a zoomed window, away from the pet they belong to. The frame itself
+ * must not swallow clicks in the gaps around the UI.
+ */
+.pet-ui-frame {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 360px;
+  height: 420px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
 }
 </style>
