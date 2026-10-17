@@ -50,16 +50,27 @@ python scripts/fetch_local_voice_engine.py --dest E:/AI/sherpa-onnx
 | [Rust](https://rustup.rs/) | `stable` | 由仓库根目录的 `rust-toolchain.toml` 固定，`clippy` 与 `rustfmt` 会随工具链自动装好 |
 | [MSVC Build Tools](https://visualstudio.microsoft.com/downloads/) | 含「使用 C++ 的桌面开发」 | **走 MSVC 路线时链接 Rust 程序必需**（Visual Studio 社区版即可，不必装完整 IDE） |
 
-也可以选 GNU 路线：安装 `stable-x86_64-pc-windows-gnu` 工具链，并准备 MinGW-w64 或
-llvm-mingw 提供的 `libgcc`（仓库的 `.gitignore` 忽略了该文件，**本仓库不提供它**，
-需要的话按你的工具链文档自行放置），然后让 cargo 改用它：
+也可以选 GNU 路线——**没有 MSVC Build Tools 的机器必须走这条**。仓库根的
+`rust-toolchain.toml` 钉的是 `stable`，在 Windows 上会解析成 `-msvc`，所以要么显式指定
+工具链、要么把目标定成 gnu；两者都能覆盖它。
 
 ```bash
-rustup override set stable-x86_64-pc-windows-gnu
+rustup toolchain install stable-x86_64-pc-windows-gnu   # 若还没装
+cargo +stable-x86_64-pc-windows-gnu test --manifest-path src-tauri/Cargo.toml
+cargo +stable-x86_64-pc-windows-gnu build --release --features custom-protocol --manifest-path src-tauri/Cargo.toml
 ```
 
+需要一份 MinGW-w64 的 `gcc` / `dlltool` / `ar` 在 `PATH` 上。两条都验证过的最小做法：
+
+- **便携 MSYS2**：解压一份 MSYS2 到任意盘，用 `pacman` 装 `mingw-w64-x86_64-gcc`，
+  再把 `mingw64/bin` 加进 `PATH`（本机实测版本 `gcc 16.2.0`）。
+- **`skeeto/w64devkit`**：单 zip、解压即用，`gcc`/`dlltool`/`ar`/`ld` 都在里面。
+
+把 `CARGO_HOME` / `RUSTUP_HOME` / `CARGO_TARGET_DIR` 指到数据盘可以避免吃系统盘，
+例如：`$env:CARGO_TARGET_DIR = 'E:\AI\AI-Pets-target'`。
+
 CI 走的是 MSVC 路线（`dtolnay/rust-toolchain@stable`），也是最省事的默认选择。
-若你的机器上 `cargo` 报 ``linker `link.exe` not found``，说明缺的就是上表里的 MSVC Build Tools，
+若你的机器上 `cargo` 报 ``linker `link.exe` not found``，那就是缺 MSVC Build Tools：
 装上即可，或按上面切到 GNU 路线。
 
 ### 四步跑起来
