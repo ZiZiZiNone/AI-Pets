@@ -4,18 +4,21 @@
  * Runs the five release-readiness checks and regenerates docs/VERIFICATION.md so every
  * claim in it can be reproduced with one command instead of being taken on trust:
  *
- *   1. PE forensics on the release binary (headers, sections, imports, embedded assets)
+ *   1. PE forensics on the release binary (headers, sections, imports, embedded assets,
+ *      and whether the binary is even new enough for that asset table to mean anything)
  *   2. Working-tree comparison against HEAD (status, diffstat, HEAD-vs-working spot checks)
  *   3. typecheck with a before/after artifact-residue check
  *   4. static dead-export scan over src/** and tests/**
- *   5. per-file diff inventory
+ *   5. import-cycle scan
+ *   6. Rust gates (fmt, clippy, unit tests)
+ *   7. per-file diff inventory
  *
  * Run: npm run verify
  * Everything reported here is captured from a real run; nothing is asserted by hand.
  */
 
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -103,6 +106,11 @@ function peForensics() {
   let distTotal = 0;
   let distEmbedded = 0;
   const missing = [];
+  // Assets are embedded when the crate is compiled, so a binary that is older than the
+  // bundle it is compared against cannot answer the question this table asks. Nothing
+  // about the mtimes is visible in the numbers below, which is how a stale binary
+  // reported twelve "missing" assets that were never missing at all.
+  const newerThanBinary = [];
   if (existsSync(dist)) {
     const all = [];
     const walk = (d) => {
@@ -114,12 +122,18 @@ function peForensics() {
     };
     walk(dist);
     distTotal = all.length;
+    const exeMtime = statSync(EXE).mtimeMs;
     for (const f of all) {
       const rel = relative(dist, f).split(sep).join('/');
       if (b.includes(Buffer.from(rel, 'ascii'))) distEmbedded++;
       else missing.push(rel);
+      const m = statSync(f).mtimeMs;
+      if (m > exeMtime) newerThanBinary.push({ rel, mtimeMs: m });
     }
+    newerThanBinary.sort((x, y) => y.mtimeMs - x.mtimeMs);
   }
+  const stale = newerThanBinary.length > 0;
+  const ts = (ms) => new Date(ms).toISOString().replace('T', ' ').slice(0, 19);
 
   let gzipStreams = 0;
   for (let i = 0; i < b.length - 1; i++) {
@@ -152,10 +166,22 @@ function peForensics() {
     '',
     missing.length ? missing.map((m) => `- MISSING \`${m}\``).join('\n') : '- every dist asset path is embedded in the executable',
     '',
+    stale
+      ? [
+          `> **STALE BINARY — the asset table above is inconclusive.**`,
+          `> ${newerThanBinary.length} of ${distTotal} \`dist/\` files are newer than the executable`,
+          `> (newest: \`${newerThanBinary[0].rel}\` at ${ts(newerThanBinary[0].mtimeMs)}, binary linked at ${ts(statSync(EXE).mtimeMs)}).`,
+          '> The path table describes whatever `dist/` looked like at link time, so a missing entry',
+          '> means "the binary predates this bundle", not "the release is broken".',
+          '> Rebuild with `npm run build` followed by',
+          '> `cargo build --release --features custom-protocol --manifest-path src-tauri/Cargo.toml`.',
+        ].join('\n')
+      : `binary freshness: the executable is newer than all ${distTotal} \`dist/\` files (linked ${ts(statSync(EXE).mtimeMs)}), so the path table describes this bundle.`,
+    '',
     `gzip streams in image: **${gzipStreams}** — asset bodies are stored compressed, so file contents are not greppable as plaintext; the path table above is the reliable indicator.`,
   ].join('\n');
 
-  return { lines: lines.join('\n'), detail, symbolTotal, embed };
+  return { lines: lines.join('\n'), detail, symbolTotal, embed, stale };
 }
 
 /* ---------------------------------------------------------------- 2. git */
@@ -495,6 +521,7 @@ writeFileSync(OUT, body, 'utf8');
 
 const failures = [
   ['PE forensics', true],
+  ['binary freshness (exe older than dist)', !pe.stale],
   ['git comparison', true],
   ['typecheck', tc.exitCode === 0],
   ['dead-export scan', ds.exitCode === 0],
