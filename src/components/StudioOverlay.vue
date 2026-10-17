@@ -4,9 +4,10 @@
     ref="overlayRootRef"
     class="blueprint-studio-overlay interactive-ui"
     @wheel.prevent="handleWheelZoom"
-    @mousedown="handleCanvasMouseDown"
-    @mousemove="handleCanvasMouseMove"
-    @mouseup="handleCanvasMouseUp"
+    @pointerdown="handleCanvasPointerDown"
+    @pointermove="handleCanvasMouseMove"
+    @pointerup="handleCanvasPointerUp"
+    @pointercancel="handleCanvasPointerUp"
   >
     <div class="cad-grid-backdrop"></div>
     <div class="cad-crosshair-h"></div>
@@ -131,6 +132,20 @@ import { computed, ref, watch } from 'vue';
 import { usePetStore } from '@/store/petStore';
 import { serializePetManifestYaml } from '@/utils/yamlLoader';
 import type { RectDef } from '@/types/pet';
+import {
+  HIT_AREA_ORIGIN_X,
+  HIT_AREA_ORIGIN_Y,
+  COPY_FEEDBACK_MS,
+  STUDIO_MAX_SCALE,
+  STUDIO_MIN_BOX_SIZE_PX,
+  STUDIO_MIN_SCALE,
+  STUDIO_ZOOM_STEP,
+  STAGE_HEIGHT_PX,
+  STAGE_WIDTH_PX,
+} from '@/constants/timing';
+
+const STAGE_CENTER_X = STAGE_WIDTH_PX / 2;
+const STAGE_CENTER_Y = STAGE_HEIGHT_PX / 2;
 
 const props = defineProps<{
   onTransformChange: (scale: number, offsetX: number, offsetY: number) => void;
@@ -144,6 +159,7 @@ const newAreaName = ref<string>('head');
 const previewMotion = ref<string>('idle');
 const previewExp = ref<string>('neutral');
 const copiedFlag = ref<boolean>(false);
+let copiedResetTimer: number | null = null;
 
 const isDraggingOffset = ref<boolean>(false);
 const dragStart = ref({ x: 0, y: 0, origX: 0, origY: 0 });
@@ -182,11 +198,8 @@ function getHitAreaScreenStyle(rect: RectDef): Record<string, string> {
   const scale = currentScale.value;
   const offX = currentOffset.value.x;
   const offY = currentOffset.value.y;
-  const cx = 180;
-  const cy = 210;
-
-  const left = (rect.x - 160) * scale + cx + offX;
-  const top = (rect.y - 170) * scale + cy + offY;
+  const left = (rect.x - HIT_AREA_ORIGIN_X) * scale + STAGE_CENTER_X + offX;
+  const top = (rect.y - HIT_AREA_ORIGIN_Y) * scale + STAGE_CENTER_Y + offY;
   return {
     left: `${Math.round(left)}px`,
     top: `${Math.round(top)}px`,
@@ -197,10 +210,32 @@ function getHitAreaScreenStyle(rect: RectDef): Record<string, string> {
 
 function handleWheelZoom(e: WheelEvent): void {
   if (!petStore.currentPet) return;
-  const delta = e.deltaY < 0 ? 0.08 : -0.08;
-  const nextScale = Math.min(2.5, Math.max(0.35, Number((currentScale.value + delta).toFixed(2))));
+  const delta = e.deltaY < 0 ? STUDIO_ZOOM_STEP : -STUDIO_ZOOM_STEP;
+  const nextScale = Math.min(
+    STUDIO_MAX_SCALE,
+    Math.max(STUDIO_MIN_SCALE, Number((currentScale.value + delta).toFixed(2)))
+  );
   petStore.currentPet.model.scale = nextScale;
   props.onTransformChange(nextScale, currentOffset.value.x, currentOffset.value.y);
+}
+
+/**
+ * Pointer capture keeps the drag bound to this element even when the cursor leaves the
+ * overlay. Without it a release outside the window leaves the drag flags latched and
+ * every later move keeps translating the pet.
+ */
+function handleCanvasPointerDown(e: PointerEvent): void {
+  if (!petStore.currentPet) return;
+  if ((e.target as HTMLElement | null)?.closest('.interactive-ui')) return;
+  overlayRootRef.value?.setPointerCapture(e.pointerId);
+  handleCanvasMouseDown(e);
+}
+
+function handleCanvasPointerUp(e: PointerEvent): void {
+  if (overlayRootRef.value?.hasPointerCapture(e.pointerId)) {
+    overlayRootRef.value.releasePointerCapture(e.pointerId);
+  }
+  handleCanvasMouseUp();
 }
 
 function handleCanvasMouseDown(e: MouseEvent): void {
@@ -244,15 +279,17 @@ function handleCanvasMouseUp(): void {
   }
   if (isDrawingBox.value && drawRect.value && petStore.currentPet) {
     isDrawingBox.value = false;
-    if (drawRect.value.w > 16 && drawRect.value.h > 16) {
+    if (drawRect.value.w > STUDIO_MIN_BOX_SIZE_PX && drawRect.value.h > STUDIO_MIN_BOX_SIZE_PX) {
       const scale = currentScale.value;
       const offX = currentOffset.value.x;
       const offY = currentOffset.value.y;
-      const cx = 180;
-      const cy = 210;
 
-      const localX = Math.round((drawRect.value.x - cx - offX) / scale + 160);
-      const localY = Math.round((drawRect.value.y - cy - offY) / scale + 170);
+      const localX = Math.round(
+        (drawRect.value.x - STAGE_CENTER_X - offX) / scale + HIT_AREA_ORIGIN_X
+      );
+      const localY = Math.round(
+        (drawRect.value.y - STAGE_CENTER_Y - offY) / scale + HIT_AREA_ORIGIN_Y
+      );
       const localW = Math.round(drawRect.value.w / scale);
       const localH = Math.round(drawRect.value.h / scale);
 
@@ -313,11 +350,13 @@ async function handleCopyYaml(): Promise<void> {
   try {
     await navigator.clipboard.writeText(yamlText);
     copiedFlag.value = true;
-    setTimeout(() => {
+    if (copiedResetTimer !== null) window.clearTimeout(copiedResetTimer);
+    copiedResetTimer = window.setTimeout(() => {
       copiedFlag.value = false;
-    }, 1800);
+      copiedResetTimer = null;
+    }, COPY_FEEDBACK_MS);
   } catch {
-    // Ignore clipboard permission errors
+    // Clipboard permission denied: leave the button untouched.
   }
 }
 

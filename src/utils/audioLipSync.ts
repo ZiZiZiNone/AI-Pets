@@ -1,8 +1,14 @@
+import {
+  LIPSYNC_FFT_SIZE,
+  LIPSYNC_FALLBACK_DURATION_MS,
+  LIPSYNC_SYNTH_TICK_MS,
+  VOICE_GAIN_DIVISOR,
+} from '@/constants/timing';
 import type { LipSyncFrame } from '@/types/pet';
 
-export class FormantLipSyncEngine {
+class FormantLipSyncEngine {
   private analyser: AnalyserNode;
-  private freqBins: Uint8Array;
+  private freqBins: Uint8Array<ArrayBuffer>;
   private sampleRate: number;
   private smoothingOpenY = 0;
   private smoothingFormX = 0;
@@ -11,7 +17,11 @@ export class FormantLipSyncEngine {
   private readonly releaseAlpha = 0.22;
   private readonly noiseGate = 0.04;
 
-  constructor(audioCtx: AudioContext, fftSize = 1024, smoothingTimeConstant = 0.75) {
+  constructor(
+    audioCtx: AudioContext,
+    fftSize = LIPSYNC_FFT_SIZE,
+    smoothingTimeConstant = 0.75
+  ) {
     this.analyser = audioCtx.createAnalyser();
     this.analyser.fftSize = fftSize;
     this.analyser.smoothingTimeConstant = Math.min(0.95, Math.max(0.1, smoothingTimeConstant));
@@ -97,7 +107,7 @@ const ZERO_FRAME: LipSyncFrame = {
   bands: [0, 0, 0, 0, 0, 0, 0],
 };
 
-export type UiSoundTone = 'pat' | 'feed' | 'levelup' | 'pomo' | 'click';
+type UiSoundTone = 'pat' | 'feed' | 'levelup' | 'pomo' | 'click';
 
 class GlobalLipSyncController {
   private audioCtx: AudioContext | null = null;
@@ -128,7 +138,10 @@ class GlobalLipSyncController {
   }
 
   public setGainMultiplier(gainPercent: number): void {
-    this.gainMultiplier = Math.max(0.1, Math.min(3.0, gainPercent / 75));
+    this.gainMultiplier = Math.max(
+      0.1,
+      Math.min(3.0, gainPercent / VOICE_GAIN_DIVISOR)
+    );
   }
 
   public setRmsSmoothing(smoothing: number): void {
@@ -223,7 +236,7 @@ class GlobalLipSyncController {
     try {
       const ctx = this.ensureAudioContext();
       if (!ctx) {
-        this.startSyntheticLipSync(2200, onUpdate);
+        this.startSyntheticLipSync(LIPSYNC_FALLBACK_DURATION_MS, onUpdate);
         return;
       }
 
@@ -231,7 +244,11 @@ class GlobalLipSyncController {
       audio.crossOrigin = 'anonymous';
       this.activeAudioEl = audio;
 
-      const engine = new FormantLipSyncEngine(ctx, 1024, this.rmsSmoothing);
+      const engine = new FormantLipSyncEngine(
+        ctx,
+        LIPSYNC_FFT_SIZE,
+        this.rmsSmoothing
+      );
       const source = ctx.createMediaElementSource(audio);
       engine.connectSource(source);
       const analyser = engine.getAnalyser();
@@ -253,7 +270,7 @@ class GlobalLipSyncController {
         this.stop(onUpdate);
       };
       audio.onerror = () => {
-        this.startSyntheticLipSync(2200, onUpdate);
+        this.startSyntheticLipSync(LIPSYNC_FALLBACK_DURATION_MS, onUpdate);
       };
 
       await audio.play();
@@ -303,7 +320,7 @@ class GlobalLipSyncController {
         bands,
       });
 
-      this.synthTimer = window.setTimeout(tick, 32);
+      this.synthTimer = window.setTimeout(tick, LIPSYNC_SYNTH_TICK_MS);
     };
 
     tick();

@@ -20,7 +20,10 @@ use win32_window::{
     apply_window_click_through, snap_pet_window_to_foreground, start_cursor_and_window_poller,
     SnapWindowResult,
 };
-use ws_server::{start_ws_server, WsCommandBroker};
+use ws_server::{
+    start_ws_server, WsCommandBroker, DEFAULT_HEARTBEAT_SEC, DEFAULT_WS_PORT_RANGE,
+    MIN_HEARTBEAT_SEC,
+};
 
 static LAST_INTERNAL_WRITE: Mutex<Option<Instant>> = Mutex::new(None);
 
@@ -127,15 +130,15 @@ fn resolve_project_dir(sub: &str) -> PathBuf {
 }
 
 fn parse_ws_config_from_settings() -> ((u16, u16), u64) {
+    let mut port_start = DEFAULT_WS_PORT_RANGE.0;
+    let mut port_end = DEFAULT_WS_PORT_RANGE.1;
+    let mut hb_sec = DEFAULT_HEARTBEAT_SEC;
+
     let settings_path = resolve_project_dir("config").join("settings.yaml");
     let raw = match fs::read_to_string(settings_path) {
         Ok(s) => s,
-        Err(_) => return ((9527, 9537), 45),
+        Err(_) => return ((port_start, port_end), hb_sec),
     };
-
-    let mut port_start: u16 = 9527;
-    let mut port_end: u16 = 9537;
-    let mut hb_sec: u64 = 45;
 
     for line in raw.lines() {
         let trimmed = line.trim();
@@ -151,7 +154,7 @@ fn parse_ws_config_from_settings() -> ((u16, u16), u64) {
             }
         } else if let Some(rest) = trimmed.strip_prefix("heartbeat_timeout_sec:") {
             if let Ok(val) = rest.trim().parse::<u64>() {
-                hb_sec = val.max(10);
+                hb_sec = val.max(MIN_HEARTBEAT_SEC);
             }
         }
     }
@@ -185,7 +188,10 @@ fn query_process_memory_mb() -> u64 {
             .args(["-o", "rss=", "-p", &pid])
             .output()
         {
-            let kb: u64 = String::from_utf8_lossy(&out.stdout).trim().parse().unwrap_or(0);
+            let kb: u64 = String::from_utf8_lossy(&out.stdout)
+                .trim()
+                .parse()
+                .unwrap_or(0);
             if kb > 0 {
                 return (kb / 1024).max(1);
             }
@@ -457,13 +463,46 @@ fn setup_config_hot_reload_watcher(app: AppHandle) {
 }
 
 fn setup_system_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
-    let show_pet = MenuItem::with_id(app, "tray_show_pet", "💠 召唤/归位桌面宠物", true, None::<&str>)?;
-    let open_comp = MenuItem::with_id(app, "tray_open_companion", "🎛️ 打开空间伴生控制中心", true, None::<&str>)?;
-    let toggle_ct = MenuItem::with_id(app, "tray_toggle_click_through", "👻 切换全局鼠标穿透", true, None::<&str>)?;
-    let toggle_dnd = MenuItem::with_id(app, "tray_toggle_dnd", "🔕 切换勿扰隐匿模式", true, None::<&str>)?;
-    let quit_item = MenuItem::with_id(app, "tray_quit", "✕ 退出 DesktopPetHost", true, None::<&str>)?;
+    let show_pet = MenuItem::with_id(
+        app,
+        "tray_show_pet",
+        "💠 召唤/归位桌面宠物",
+        true,
+        None::<&str>,
+    )?;
+    let open_comp = MenuItem::with_id(
+        app,
+        "tray_open_companion",
+        "🎛️ 打开空间伴生控制中心",
+        true,
+        None::<&str>,
+    )?;
+    let toggle_ct = MenuItem::with_id(
+        app,
+        "tray_toggle_click_through",
+        "👻 切换全局鼠标穿透",
+        true,
+        None::<&str>,
+    )?;
+    let toggle_dnd = MenuItem::with_id(
+        app,
+        "tray_toggle_dnd",
+        "🔕 切换勿扰隐匿模式",
+        true,
+        None::<&str>,
+    )?;
+    let quit_item = MenuItem::with_id(
+        app,
+        "tray_quit",
+        "✕ 退出 DesktopPetHost",
+        true,
+        None::<&str>,
+    )?;
 
-    let menu = Menu::with_items(app, &[&show_pet, &open_comp, &toggle_ct, &toggle_dnd, &quit_item])?;
+    let menu = Menu::with_items(
+        app,
+        &[&show_pet, &open_comp, &toggle_ct, &toggle_dnd, &quit_item],
+    )?;
 
     let mut builder = TrayIconBuilder::new()
         .menu(&menu)

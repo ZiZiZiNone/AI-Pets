@@ -69,6 +69,12 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { usePetStore } from '@/store/petStore';
 import { globalLipSync } from '@/utils/audioLipSync';
 import type { PetActionConfig } from '@/types/pet';
+import {
+  TYPEWRITER_BUDGET_MS_PER_CHAR,
+  TYPEWRITER_MAX_MS,
+  TYPEWRITER_MIN_MS,
+  TYPEWRITER_MS_PER_CHAR,
+} from '@/constants/timing';
 
 const petStore = usePetStore();
 
@@ -138,7 +144,12 @@ function startTypewriter(text: string): void {
       globalLipSync.speakWithWebSpeechTts(text, petStore.volume);
     }
     if (petStore.settings.audio.enable_lip_sync) {
-      const syncDuration = Math.min(3600, Math.max(900, chars.length * 45));
+      // The synthetic mouth must finish with the typewriter, so it is budgeted off the
+      // same per-character cost rather than the bubble's longer display window.
+      const syncDuration = Math.min(
+        TYPEWRITER_MAX_MS,
+        Math.max(TYPEWRITER_MIN_MS, chars.length * TYPEWRITER_BUDGET_MS_PER_CHAR)
+      );
       globalLipSync.startSyntheticLipSync(syncDuration, (frame) => {
         petStore.broadcastLipSync(frame);
       });
@@ -149,7 +160,7 @@ function startTypewriter(text: string): void {
     if (index < chars.length) {
       displayedText.value += chars[index];
       index++;
-      typewriterTimer = window.setTimeout(step, 24);
+      typewriterTimer = window.setTimeout(step, TYPEWRITER_MS_PER_CHAR);
     } else {
       isTyping.value = false;
       typewriterTimer = null;

@@ -105,6 +105,34 @@ import CareFleetTab from './CareFleetTab.vue';
 import WebMatrixTab from './WebMatrixTab.vue';
 import { usePetStore } from '@/store/petStore';
 import type { SduiSchema, SduiWidget, SystemTelemetry } from '@/types/pet';
+import { COMPANION_LOG_LIMIT, POD_NUDGE_LIMIT_PX } from '@/constants/timing';
+
+/**
+ * Writes a remote value into a widget without widening the discriminated union.
+ *
+ * The companion-update-state payload is attacker-reachable over the bus, so a cast to
+ * `{ value: unknown }` would let an arbitrary JSON value land in a field the renderer
+ * expects to be a string or boolean.
+ */
+function applyWidgetValue(widget: SduiWidget, value: unknown): boolean {
+  switch (widget.type) {
+    case 'status_badge':
+    case 'select':
+      if (typeof value !== 'string') return false;
+      widget.value = value;
+      return true;
+    case 'switch':
+      if (typeof value !== 'boolean') return false;
+      widget.value = value;
+      return true;
+    case 'slider':
+      if (typeof value !== 'number' || !Number.isFinite(value)) return false;
+      widget.value = value;
+      return true;
+    default:
+      return false;
+  }
+}
 
 const petStore = usePetStore();
 
@@ -231,11 +259,14 @@ async function handleHeaderDrag(): Promise<void> {
 }
 
 function nudgePod(id: string, delta: number): void {
-  podOffsets[id] = Math.max(-24, Math.min(24, (podOffsets[id] || 0) + delta));
+  podOffsets[id] = Math.max(
+    -POD_NUDGE_LIMIT_PX,
+    Math.min(POD_NUDGE_LIMIT_PX, (podOffsets[id] || 0) + delta)
+  );
 }
 
 async function hidePanel(): Promise<void> {
-  await window.PetBridge.panel.close();
+  await window.PetBridge?.panel.close();
 }
 
 async function onInputFocus(): Promise<void> {
@@ -268,7 +299,9 @@ function appendLogLine(line: string): void {
   );
   if (logWidget) {
     logWidget.lines.push(`[${new Date().toLocaleTimeString()}] ${line}`);
-    if (logWidget.lines.length > 80) logWidget.lines.shift();
+    if (logWidget.lines.length > COMPANION_LOG_LIMIT) {
+      logWidget.lines.splice(0, logWidget.lines.length - COMPANION_LOG_LIMIT);
+    }
   }
 }
 
@@ -330,9 +363,7 @@ onMounted(async () => {
         if (p.log_line) appendLogLine(p.log_line);
         if (p.widget_id !== undefined && p.value !== undefined) {
           const target = activeSchema.value.widgets.find((w) => w.id === p.widget_id);
-          if (target && 'value' in target) {
-            (target as { value: unknown }).value = p.value;
-          }
+          if (target) applyWidgetValue(target, p.value);
         }
       })
     );

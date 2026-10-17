@@ -76,7 +76,7 @@
         v-if="mountedUrl"
         :src="mountedUrl"
         class="matrix-iframe"
-        sandbox="allow-scripts allow-same-origin allow-forms"
+        sandbox="allow-scripts allow-forms allow-popups"
       ></iframe>
       <div v-else class="matrix-placeholder">
         <p>💠 空间网页投射矩阵已就绪</p>
@@ -90,9 +90,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { onBeforeUnmount, ref, watch } from 'vue';
 import { usePetStore } from '@/store/petStore';
 import { requestLlmCompletion } from '@/utils/commandEngine';
+import type { LlmBridgeConfig } from '@/types/pet';
+import { COMPANION_STATUS_RESET_MS, LLM_REPLY_BUBBLE_MS } from '@/constants/timing';
+import { UI_TONE_LABELS } from '@/constants/messages';
 
 const props = defineProps<{
   initialUrl?: string;
@@ -107,7 +110,8 @@ const emit = defineEmits<{
 const petStore = usePetStore();
 const urlInput = ref<string>(props.initialUrl || 'https://example.com');
 const mountedUrl = ref<string>(props.initialUrl || '');
-const testStatusText = ref<string>('⚡ 测试连接');
+const testStatusText = ref<string>(UI_TONE_LABELS.idle);
+let statusResetTimer: number | null = null;
 
 watch(
   () => props.initialUrl,
@@ -128,33 +132,49 @@ function onConfigBlur(): void {
   emit('input-blur');
 }
 
+function resetStatusLater(text: string, delayMs: number): void {
+  if (statusResetTimer !== null) window.clearTimeout(statusResetTimer);
+  statusResetTimer = window.setTimeout(() => {
+    testStatusText.value = text;
+    statusResetTimer = null;
+  }, delayMs);
+}
+
 async function testLlmGateway(): Promise<void> {
-  petStore.saveLlmConfig({ enabled: true });
-  if (!petStore.llmConfig.apiKey || !petStore.llmConfig.apiUrl) {
-    testStatusText.value = '⚠️ 需填 Key';
-    setTimeout(() => (testStatusText.value = '⚡ 测试连接'), 2000);
+  // Probe with a throwaway config. Flipping the persisted `enabled` flag here meant a
+  // connectivity check silently switched remote LLM on for the user.
+  const probe: LlmBridgeConfig = { ...petStore.llmConfig, enabled: true };
+  if (!probe.apiKey || !probe.apiUrl) {
+    testStatusText.value = UI_TONE_LABELS.missingKey;
+    resetStatusLater(UI_TONE_LABELS.idle, COMPANION_STATUS_RESET_MS);
     return;
   }
-  testStatusText.value = '⏳ 请求中...';
+
+  testStatusText.value = UI_TONE_LABELS.pending;
   const reply = await requestLlmCompletion(
     '请用一句话向主人打个招呼',
     petStore.currentPet,
-    petStore.llmConfig
+    probe
   );
+
   if (reply) {
-    testStatusText.value = '✓ 连通正常';
+    testStatusText.value = UI_TONE_LABELS.success;
     petStore.scheduleAction({
       priority: 'P1',
       motion: 'happy',
       expression: 'smile',
       text: reply,
-      durationMs: 4500,
+      durationMs: LLM_REPLY_BUBBLE_MS,
     });
     emit('log', `[LLM OK] ${reply}`);
   } else {
-    testStatusText.value = '✕ 连接失败';
+    testStatusText.value = UI_TONE_LABELS.failure;
     emit('log', '[LLM ERR] Failed to reach endpoint');
   }
-  setTimeout(() => (testStatusText.value = '⚡ 测试连接'), 2400);
+  resetStatusLater(UI_TONE_LABELS.idle, COMPANION_STATUS_RESET_MS);
 }
+
+onBeforeUnmount(() => {
+  if (statusResetTimer !== null) window.clearTimeout(statusResetTimer);
+});
 </script>

@@ -4,7 +4,6 @@
       <div
         v-if="
           (isCursorHoveringPet || petStore.pomodoro.running || petStore.quickChatOpen) &&
-          petStore.showMiniStatusBar &&
           !petStore.studioOpen &&
           !petStore.bubbleText
         "

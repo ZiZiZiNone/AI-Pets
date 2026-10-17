@@ -1,5 +1,5 @@
 import * as PIXI from 'pixi.js';
-import { Live2DModel } from 'pixi-live2d-display';
+import { Live2DModel } from 'pixi-live2d-display-lipsyncpatch';
 import {
   type HitTestResult,
   type IPetAdapter,

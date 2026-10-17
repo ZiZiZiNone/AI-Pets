@@ -8,6 +8,13 @@ edition = "2021"
 [build-dependencies]
 tauri-build = { version = "2.0.0", features = [] }
 
+[features]
+# Without this feature Tauri serves the window from `build.devUrl`, so a release
+# binary built by plain `cargo build --release` points at the Vite dev server and
+# renders "connection refused" once no dev server is running. `tauri build` enables
+# it automatically; enabling it explicitly keeps `cargo build --release` shippable too.
+custom-protocol = ["tauri/custom-protocol"]
+
 [dependencies]
 tauri = { version = "2.0.0", features = ["protocol-asset", "tray-icon", "unstable"] }
 serde = { version = "1.0", features = ["derive"] }

@@ -3,11 +3,11 @@
     <div
       v-if="petStore.radialMenuOpen"
       class="tactical-astrolabe-layer interactive-ui"
-      :style="petStore.activeThemeCssVars"
+      :style="[petStore.activeThemeCssVars, hubStyle]"
       @click.self="closeMenu"
     >
       <!-- SVG Counter-Rotating Gyroscopic Astrolabe & Laser Leader Lines -->
-      <svg class="astrolabe-svg" viewBox="0 0 360 420">
+      <svg class="astrolabe-svg" :viewBox="stageViewBox">
         <defs>
           <radialGradient id="coreHubGlow" cx="50%" cy="50%" r="50%">
             <stop offset="0%" :stop-color="petStore.activeTheme.primary" stop-opacity="0.35" />
@@ -15,14 +15,14 @@
           </radialGradient>
         </defs>
 
-        <circle cx="180" cy="218" r="135" fill="url(#coreHubGlow)" />
+        <circle :cx="stageCenterX" :cy="RADIAL_MENU_CENTER_Y_PX" r="135" fill="url(#coreHubGlow)" />
 
         <!-- Outer CW Rotating Degree Ring -->
-        <g class="orbit-ring-cw" transform-origin="180 218">
+        <g class="orbit-ring-cw" :transform-origin="hubOrigin">
           <circle
-            cx="180"
-            cy="218"
-            r="122"
+            :cx="stageCenterX"
+            :cy="RADIAL_MENU_CENTER_Y_PX"
+            :r="RADIAL_MENU_RADIUS_X_PX"
             fill="none"
             :stroke="petStore.activeTheme.primary"
             stroke-width="1.2"
@@ -32,10 +32,10 @@
         </g>
 
         <!-- Inner CCW Rotating Tactical Ring -->
-        <g class="orbit-ring-ccw" transform-origin="180 218">
+        <g class="orbit-ring-ccw" :transform-origin="hubOrigin">
           <circle
-            cx="180"
-            cy="218"
+            :cx="stageCenterX"
+            :cy="RADIAL_MENU_CENTER_Y_PX"
             r="96"
             fill="none"
             :stroke="petStore.activeTheme.accent"
@@ -48,10 +48,10 @@
         <!-- Laser Vector Leader Lines from Core to Each Wing Node -->
         <g v-for="(coord, idx) in nodeCoordinates" :key="'line_' + idx">
           <line
-            x1="180"
-            y1="218"
-            :x2="180 + coord.x"
-            :y2="218 + coord.y"
+            :x1="stageCenterX"
+            :y1="RADIAL_MENU_CENTER_Y_PX"
+            :x2="stageCenterX + coord.x"
+            :y2="RADIAL_MENU_CENTER_Y_PX + coord.y"
             :stroke="
               activePrimaryId === primaryItems[idx]?.id
                 ? petStore.activeTheme.accent
@@ -62,8 +62,8 @@
             opacity="0.55"
           />
           <circle
-            :cx="180 + coord.x * 0.55"
-            :cy="218 + coord.y * 0.55"
+            :cx="stageCenterX + coord.x * 0.55"
+            :cy="RADIAL_MENU_CENTER_Y_PX + coord.y * 0.55"
             r="2.2"
             :fill="petStore.activeTheme.primary"
           />
@@ -132,10 +132,26 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { usePetStore } from '@/store/petStore';
+import {
+  RADIAL_MENU_CENTER_Y_PX,
+  RADIAL_MENU_RADIUS_X_PX,
+  RADIAL_MENU_RADIUS_Y_PX,
+  RADIAL_MENU_START_ANGLE_RAD,
+  STAGE_HEIGHT_PX,
+  STAGE_WIDTH_PX,
+} from '@/constants/timing';
 import type { MenuItemSchema } from '@/types/pet';
 
 const petStore = usePetStore();
 const activePrimaryId = ref<string | null>(null);
+
+const stageCenterX = STAGE_WIDTH_PX / 2;
+const stageViewBox = `0 0 ${STAGE_WIDTH_PX} ${STAGE_HEIGHT_PX}`;
+const hubOrigin = `${stageCenterX} ${RADIAL_MENU_CENTER_Y_PX}`;
+const hubStyle = {
+  top: `${RADIAL_MENU_CENTER_Y_PX}px`,
+  left: `${stageCenterX}px`,
+};
 
 const primaryItems = computed<MenuItemSchema[]>(() => petStore.mergedMenuTree);
 
@@ -153,15 +169,13 @@ const activeSecondaryItems = computed<MenuItemSchema[]>(
 
 const nodeCoordinates = computed<Array<{ x: number; y: number }>>(() => {
   const total = Math.max(1, primaryItems.value.length);
-  const radiusX = 122;
-  const radiusY = 114;
-  const startAngle = -Math.PI / 2;
 
   return primaryItems.value.map((_, index) => {
-    const angle = startAngle + (index / total) * Math.PI * 2;
+    const angle =
+      RADIAL_MENU_START_ANGLE_RAD + (index / total) * Math.PI * 2;
     return {
-      x: Math.round(Math.cos(angle) * radiusX),
-      y: Math.round(Math.sin(angle) * radiusY),
+      x: Math.round(Math.cos(angle) * RADIAL_MENU_RADIUS_X_PX),
+      y: Math.round(Math.sin(angle) * RADIAL_MENU_RADIUS_Y_PX),
     };
   });
 });
@@ -252,8 +266,6 @@ watch(
 
 .orbital-hub {
   position: absolute;
-  top: 218px;
-  left: 180px;
   width: 0;
   height: 0;
   pointer-events: none;

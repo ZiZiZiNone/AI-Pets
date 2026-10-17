@@ -71,10 +71,13 @@ pub fn apply_no_activate_style(window: &WebviewWindow, no_activate: bool) {
             let hwnd = HWND(raw_hwnd.0);
             unsafe {
                 let current = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+                // Both flags must be cleared together. Leaving WS_EX_TOOLWINDOW set
+                // permanently hid the companion from the taskbar and Alt+Tab after its
+                // first blur, even once it was focusable again.
                 let next = if no_activate {
                     current | (WS_EX_NOACTIVATE.0 as isize) | (WS_EX_TOOLWINDOW.0 as isize)
                 } else {
-                    current & !(WS_EX_NOACTIVATE.0 as isize)
+                    current & !((WS_EX_NOACTIVATE.0 as isize) | (WS_EX_TOOLWINDOW.0 as isize))
                 };
                 let _ = SetWindowLongPtrW(hwnd, GWL_EXSTYLE, next);
             }
@@ -106,7 +109,8 @@ pub fn adapt_windows_to_monitor(app: &App) {
             let safe_x = (mon_pos.x + mon_size.width as i32 - win_w - margin_x).max(mon_pos.x + 20);
             let safe_y =
                 (mon_pos.y + mon_size.height as i32 - win_h - margin_y).max(mon_pos.y + 20);
-            let _ = main_win.set_position(Position::Physical(PhysicalPosition::new(safe_x, safe_y)));
+            let _ =
+                main_win.set_position(Position::Physical(PhysicalPosition::new(safe_x, safe_y)));
 
             if let Some(hud_win) = app.get_webview_window("hud") {
                 let _ = hud_win.set_position(Position::Physical(*mon_pos));
@@ -273,8 +277,7 @@ pub fn snap_pet_window_to_foreground(
     if only_if_near_top {
         let snap_threshold = (95.0 * scale) as i32;
         let vertical_diff = (pet_pos.y - target_y).abs();
-        let horizontal_inside =
-            pet_pos.x + pet_w / 2 >= fg.x && pet_pos.x <= fg.x + fg.width;
+        let horizontal_inside = pet_pos.x + pet_w / 2 >= fg.x && pet_pos.x <= fg.x + fg.width;
         if vertical_diff > snap_threshold || !horizontal_inside {
             return SnapWindowResult {
                 snapped: false,
@@ -313,10 +316,7 @@ pub fn apply_edge_peek_position(main_win: &WebviewWindow, enable: bool) -> Resul
         let peek_offset = (130.0 * scale) as i32;
         ((fg.screen_width - peek_offset).max(400), pos.y.max(120))
     } else {
-        let restored = PRE_PEEK_POSITION
-            .lock()
-            .ok()
-            .and_then(|mut s| s.take());
+        let restored = PRE_PEEK_POSITION.lock().ok().and_then(|mut s| s.take());
         match restored {
             Some((rx, ry)) => (rx, ry),
             None => {
@@ -327,7 +327,9 @@ pub fn apply_edge_peek_position(main_win: &WebviewWindow, enable: bool) -> Resul
     };
 
     main_win
-        .set_position(Position::Physical(PhysicalPosition::new(target_x, target_y)))
+        .set_position(Position::Physical(PhysicalPosition::new(
+            target_x, target_y,
+        )))
         .map_err(|e| e.to_string())
 }
 

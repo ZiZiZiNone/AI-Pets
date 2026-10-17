@@ -1,7 +1,7 @@
 <template>
   <main class="spatial-pods-stream">
     <div
-      v-for="(widget, idx) in schema.widgets"
+      v-for="(widget, idx) in widgets"
       :key="widget.id"
       class="spatial-pod-card"
       :class="[
@@ -13,8 +13,20 @@
       <div class="pod-meta-bar" @dblclick="togglePodCollapse(widget.id)">
         <span class="pod-code">POD-0{{ idx + 1 }} // {{ widget.type.toUpperCase() }}</span>
         <div class="pod-bar-actions">
-          <button class="nudge-btn" title="左移微调" @click.stop="nudgePod(widget.id, -8)">◂</button>
-          <button class="nudge-btn" title="右移微调" @click.stop="nudgePod(widget.id, 8)">▸</button>
+          <button
+            class="nudge-btn"
+            title="左移微调"
+            @click.stop="emit('nudge-pod', widget.id, -POD_NUDGE_STEP_PX)"
+          >
+            ◂
+          </button>
+          <button
+            class="nudge-btn"
+            title="右移微调"
+            @click.stop="emit('nudge-pod', widget.id, POD_NUDGE_STEP_PX)"
+          >
+            ▸
+          </button>
           <button
             class="nudge-btn"
             :title="collapsedPods[widget.id] ? '展开模块' : '折叠模块'"
@@ -68,12 +80,7 @@
             <span class="slider-readout">{{ widget.value }}{{ widget.unit || '' }}</span>
           </div>
           <div class="cyber-slider-track">
-            <div
-              class="cyber-slider-fill"
-              :style="{
-                width: `${Math.min(100, Math.max(0, ((widget.value - widget.min) / Math.max(1, widget.max - widget.min)) * 100))}%`
-              }"
-            ></div>
+            <div class="cyber-slider-fill" :style="{ width: `${sliderPercent(widget)}%` }"></div>
             <input
               type="range"
               class="cyber-slider-input"
@@ -122,12 +129,14 @@
 </template>
 
 <script setup lang="ts">
-import { reactive } from 'vue';
+import { reactive, ref, watch } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { emit as tauriEmit } from '@tauri-apps/api/event';
 import { usePetStore } from '@/store/petStore';
 import { globalLipSync } from '@/utils/audioLipSync';
 import type { SduiSchema, SduiWidget } from '@/types/pet';
+import { HUD_ANIMATION_BOX, POD_NUDGE_STEP_PX, VOICE_GAIN_PERCENT_SCALE } from '@/constants/timing';
+import { STAGE_MESSAGES } from '@/constants/messages';
 
 const props = defineProps<{
   schema: SduiSchema;
@@ -142,17 +151,41 @@ const emit = defineEmits<{
 const petStore = usePetStore();
 const collapsedPods = reactive<Record<string, boolean>>({});
 
+// The schema arrives through a prop but is driven by a remote host over the bus, so the
+// view works on its own deep copy. Editing in place would otherwise mutate a prop and
+// corrupt the state the companion emits back to the stage.
+const widgets = ref<SduiWidget[]>(structuredClone(props.schema.widgets));
+
+watch(
+  () => props.schema.widgets,
+  (next) => {
+    widgets.value = structuredClone(next);
+  },
+  { deep: true }
+);
+
 function togglePodCollapse(id: string): void {
   collapsedPods[id] = !collapsedPods[id];
 }
 
-function nudgePod(id: string, delta: number): void {
-  emit('nudge-pod', id, delta);
+function sliderPercent(widget: Extract<SduiWidget, { type: 'slider' }>): number {
+  const span = Math.max(1, widget.max - widget.min);
+  return Math.min(100, Math.max(0, ((widget.value - widget.min) / span) * 100));
 }
 
-async function syncWidgetValue(widgetId: string, value: unknown): Promise<void> {
-  emit('log', `[SYNAPSE SYNC] ${widgetId} => ${JSON.stringify(value)}`);
+async function notifyHost(method: string, params: Record<string, unknown>): Promise<void> {
+  try {
+    await invoke('ws_send_event', {
+      appId: props.schema.app_id || 'broadcast',
+      method,
+      params: { app_id: props.schema.app_id, ...params },
+    });
+  } catch {
+    // No external WebSocket client is attached.
+  }
+}
 
+async function applyWidgetSideEffect(widgetId: string, value: unknown): Promise<void> {
   if (widgetId === 'enable_climb' && typeof value === 'boolean') {
     petStore.settings.behavior.enable_window_climbing = value;
     await petStore.saveHostSettings();
@@ -162,27 +195,28 @@ async function syncWidgetValue(widgetId: string, value: unknown): Promise<void> 
     petStore.settings.audio.enable_tts = value;
     await petStore.saveHostSettings();
   } else if (widgetId === 'fps_mode' && typeof value === 'string') {
-    petStore.fpsOverride = value as 'dynamic' | '60' | '30';
+    petStore.setFpsOverride(value as 'dynamic' | '60' | '30');
   } else if (widgetId === 'voice_gain' && typeof value === 'number') {
-    petStore.settings.audio.rms_gain = Number((value / 25).toFixed(2));
+    petStore.settings.audio.rms_gain = Number(
+      (value / VOICE_GAIN_PERCENT_SCALE).toFixed(2)
+    );
+    // Apply locally too: the bus only reaches the stage window, not this context.
     globalLipSync.setGainMultiplier(value);
     await petStore.saveHostSettings();
   }
-
-  try {
-    await invoke('ws_send_event', {
-      appId: props.schema.app_id || 'broadcast',
-      method: 'panel.state_changed',
-      params: { app_id: props.schema.app_id, widget_id: widgetId, value },
-    });
-  } catch {
-    // No external WS client
-  }
 }
 
-async function handleSwitchToggle(widget: Extract<SduiWidget, { type: 'switch' }>): Promise<void> {
+async function commitWidget(widgetId: string, value: unknown): Promise<void> {
+  emit('log', `[SYNAPSE SYNC] ${widgetId} => ${JSON.stringify(value)}`);
+  await applyWidgetSideEffect(widgetId, value);
+  await notifyHost('panel.state_changed', { widget_id: widgetId, value });
+}
+
+async function handleSwitchToggle(
+  widget: Extract<SduiWidget, { type: 'switch' }>
+): Promise<void> {
   widget.value = !widget.value;
-  await syncWidgetValue(widget.id, widget.value);
+  await commitWidget(widget.id, widget.value);
 }
 
 async function handleSelectChange(
@@ -190,7 +224,7 @@ async function handleSelectChange(
   newValue: string
 ): Promise<void> {
   widget.value = newValue;
-  await syncWidgetValue(widget.id, newValue);
+  await commitWidget(widget.id, newValue);
 }
 
 async function handleSliderChange(
@@ -198,7 +232,7 @@ async function handleSliderChange(
   newValue: number
 ): Promise<void> {
   widget.value = newValue;
-  await syncWidgetValue(widget.id, newValue);
+  await commitWidget(widget.id, newValue);
 }
 
 async function handleButtonClick(
@@ -209,11 +243,12 @@ async function handleButtonClick(
   emit('log', `[TRIGGER] ${label} (${buttonId})`);
 
   if (buttonId === 'btn_test_bubble') {
-    await window.PetBridge.act({
+    petStore.scheduleAction({
+      priority: 'P2',
       motion: 'happy',
       expression: 'smile',
-      text: '⚡ 空间神经突触信号已送达！声波频谱与姿态同步完成。',
-      priority: 'P2',
+      text: STAGE_MESSAGES.companionWoken,
+      durationMs: 3600,
     });
   } else if (buttonId === 'btn_test_hud') {
     await tauriEmit('hud-draw', {
@@ -222,14 +257,14 @@ async function handleButtonClick(
           id: 'demo_hud_box',
           app_id: 'host_builtin_panel',
           type: 'box',
-          x: 240,
-          y: 160,
-          w: 340,
-          h: 190,
+          x: HUD_ANIMATION_BOX.x,
+          y: HUD_ANIMATION_BOX.y,
+          w: HUD_ANIMATION_BOX.w,
+          h: HUD_ANIMATION_BOX.h,
           color: petStore.activeTheme.primary,
           label: '🎯 空间战术锁定 // SECTOR-01',
           sublabel: 'AR 雷达环绕投影 (100% 物理鼠标穿透)',
-          countdownSec: 15,
+          countdownSec: HUD_ANIMATION_BOX.countdownSec,
         },
       ],
     });
@@ -237,19 +272,6 @@ async function handleButtonClick(
     await tauriEmit('hud-clear', {});
   }
 
-  try {
-    await invoke('ws_send_event', {
-      appId: props.schema.app_id || 'broadcast',
-      method: 'panel.button_clicked',
-      params: {
-        app_id: props.schema.app_id,
-        widget_id: widgetId,
-        button_id: buttonId,
-        label,
-      },
-    });
-  } catch {
-    // Ignore
-  }
+  await notifyHost('panel.button_clicked', { widget_id: widgetId, button_id: buttonId, label });
 }
 </script>

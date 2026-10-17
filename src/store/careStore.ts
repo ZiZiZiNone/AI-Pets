@@ -1,378 +1,463 @@
+import { computed, ref, toRaw } from 'vue';
 import { defineStore } from 'pinia';
-import type {
-  PetStatsState,
-  PomodoroState,
-  ScheduledPetTask,
-  TodoItem,
-} from '@/types/pet';
+import type { PetStatsState, PomodoroState, TodoItem } from '@/types/pet';
 import { globalLipSync } from '@/utils/audioLipSync';
-
-const careBus = new BroadcastChannel('desktop_pet_care_bus');
+import { loadStorage, saveStorage } from '@/utils/storage';
+import {
+  POMODORO_DEFAULT_MINUTES,
+  POMODORO_MAX_MINUTES,
+  POMODORO_MIN_MINUTES,
+  POMODORO_TICK_MS,
+  TODO_ID_PREFIX,
+} from '@/constants/timing';
+import { CARE_MESSAGES, DEFAULT_FOCUS_LABEL } from '@/constants/messages';
+import { NOOP_PRESENTER, type CarePresenter } from './carePresenter';
 
 const STORAGE_KEYS = {
   STATS: 'desktop_pet_rpg_stats_v2',
   TODOS: 'desktop_pet_todos_v2',
-};
+} as const;
 
-function loadStorage<T>(key: string, fallback: T): T {
-  try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return fallback;
-    const parsed = JSON.parse(raw);
-    return Array.isArray(fallback)
-      ? ((Array.isArray(parsed) ? parsed : fallback) as T)
-      : { ...fallback, ...parsed };
-  } catch {
-    return fallback;
-  }
+const CHANNEL_NAME = 'desktop_pet_care_bus';
+const LEVEL_XP_GROWTH = 1.25;
+const XP_PER_COMPLETED_POMODORO = 60;
+const XP_PER_COMPLETED_TODO = 20;
+
+function defaultStats(): PetStatsState {
+  return {
+    level: 3,
+    xp: 140,
+    xpToNext: 300,
+    affinity: 78,
+    mood: 92,
+    energy: 88,
+    totalInteractions: 24,
+    completedPomodoros: 4,
+    filesAnalyzed: 6,
+  };
 }
 
-let pomoTimer: number | null = null;
-let careBusInitialized = false;
+function defaultPomodoro(): PomodoroState {
+  return {
+    running: false,
+    mode: 'focus',
+    remainingSec: POMODORO_DEFAULT_MINUTES * 60,
+    totalSec: POMODORO_DEFAULT_MINUTES * 60,
+    taskLabel: DEFAULT_FOCUS_LABEL,
+  };
+}
 
-export const useCareStore = defineStore('careStore', {
-  state: () => ({
-    isMasterWindow: true,
-    stats: loadStorage<PetStatsState>(STORAGE_KEYS.STATS, {
-      level: 3,
-      xp: 140,
-      xpToNext: 300,
-      affinity: 78,
-      mood: 92,
-      energy: 88,
-      totalInteractions: 24,
-      completedPomodoros: 4,
-      filesAnalyzed: 6,
-    }),
-    pomodoro: {
+function seededTodos(): TodoItem[] {
+  return [
+    {
+      id: 'todo_1',
+      text: '体验右键【双轨陀螺仪星盘】与四大旗舰机体切换',
+      done: false,
+      createdAt: Date.now() - 3600_000,
+      priority: 'high',
+    },
+    {
+      id: 'todo_2',
+      text: '开启一个 25 分钟番茄专注冲刺',
+      done: false,
+      createdAt: Date.now() - 1800_000,
+      priority: 'normal',
+    },
+  ];
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+export const useCareStore = defineStore('careStore', () => {
+  const isMasterWindow = ref(true);
+  const stats = ref<PetStatsState>(loadStorage(STORAGE_KEYS.STATS, defaultStats()));
+  const pomodoro = ref<PomodoroState>(defaultPomodoro());
+  const todos = ref<TodoItem[]>(loadStorage(STORAGE_KEYS.TODOS, seededTodos()));
+
+  const xpProgressPercent = computed(() =>
+    Math.min(100, Math.round((stats.value.xp / Math.max(1, stats.value.xpToNext)) * 100))
+  );
+
+  const pomoProgressPercent = computed(() => {
+    const elapsed = Math.max(0, pomodoro.value.totalSec - pomodoro.value.remainingSec);
+    return Math.min(100, Math.round((elapsed / Math.max(1, pomodoro.value.totalSec)) * 100));
+  });
+
+  const formattedPomodoroTime = computed(() => {
+    const mins = Math.floor(pomodoro.value.remainingSec / 60);
+    const secs = pomodoro.value.remainingSec % 60;
+    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  });
+
+  // Per-instance runtime state. Keeping these inside the store closure means each
+  // window owns exactly one timer and one bus binding, and neither can leak into
+  // another store instance or survive disposal.
+  let presenter: CarePresenter = NOOP_PRESENTER;
+  let tickTimer: number | null = null;
+  let busBound = false;
+
+  function bindPresenter(next: CarePresenter): void {
+    presenter = next;
+  }
+
+  function stopTicking(): void {
+    if (tickTimer === null) return;
+    clearInterval(tickTimer);
+    tickTimer = null;
+  }
+
+  function playTone(tone: 'feed' | 'levelup' | 'pomo'): void {
+    const prefs = presenter.audioPrefs();
+    if (prefs.dnd) return;
+    globalLipSync.playUiFeedbackTone(tone, prefs.volume);
+  }
+
+  const bus =
+    typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel(CHANNEL_NAME) : null;
+
+  /**
+   * Detaches a state tree from Vue reactivity.
+   *
+   * `BroadcastChannel.postMessage` runs the structured clone algorithm, which throws on
+   * a reactive proxy. Broadcasting `todos` directly raised a DataCloneError on every
+   * mutation, so every outgoing payload is flattened first.
+   */
+  function plain<T>(value: T): T {
+    return structuredClone(toRaw(value));
+  }
+
+  /**
+   * Reads the todo list without reactivity.
+   *
+   * Spreading or mapping the reactive array yields reactive element objects, which would
+   * then be written back into state and break cloning on publish.
+   */
+  function currentTodos(): TodoItem[] {
+    return toRaw(todos.value);
+  }
+
+  function publishStats(): void {
+    saveStorage(STORAGE_KEYS.STATS, stats.value);
+    bus?.postMessage({ stats: plain(stats.value) });
+  }
+
+  function publishTodos(): void {
+    saveStorage(STORAGE_KEYS.TODOS, todos.value);
+    bus?.postMessage({ todos: plain(todos.value) });
+  }
+
+  function publishPomodoro(): void {
+    bus?.postMessage({ pomodoro: plain(pomodoro.value) });
+  }
+
+  function setPomodoroTaskLabel(label: string): void {
+    const clean = label.trim() || DEFAULT_FOCUS_LABEL;
+    if (pomodoro.value.taskLabel === clean) return;
+    pomodoro.value = { ...pomodoro.value, taskLabel: clean };
+    publishPomodoro();
+  }
+
+  function addXpAndAffinity(xpDelta: number, affinityDelta = 1, moodDelta = 1): void {
+    stats.value = {
+      ...stats.value,
+      totalInteractions: stats.value.totalInteractions + 1,
+      xp: stats.value.xp + xpDelta,
+      affinity: clamp(stats.value.affinity + affinityDelta, 0, 100),
+      mood: clamp(stats.value.mood + moodDelta, 0, 100),
+    };
+
+    let next = stats.value;
+    let leveledUp = false;
+    while (next.xp >= next.xpToNext) {
+      next = {
+        ...next,
+        xp: next.xp - next.xpToNext,
+        level: next.level + 1,
+        xpToNext: Math.round(next.xpToNext * LEVEL_XP_GROWTH),
+        energy: 100,
+      };
+      leveledUp = true;
+    }
+    stats.value = next;
+    publishStats();
+
+    if (!leveledUp) return;
+    playTone('levelup');
+    presenter.schedule({
+      priority: 'P0',
+      motion: 'happy',
+      expression: 'smile',
+      text: CARE_MESSAGES.levelUp(presenter.audioPrefs().petName, stats.value.level),
+      durationMs: 5200,
+    });
+  }
+
+  function feedCareItem(itemName: string, energyGain: number, affinityGain: number, xpGain: number): void {
+    playTone('feed');
+    stats.value = {
+      ...stats.value,
+      energy: Math.min(100, stats.value.energy + energyGain),
+    };
+    addXpAndAffinity(xpGain, affinityGain, 5);
+    presenter.schedule({
+      priority: 'P1',
+      motion: 'feed',
+      expression: 'smile',
+      text: CARE_MESSAGES.fed(
+        itemName,
+        energyGain,
+        stats.value.energy,
+        stats.value.affinity,
+        xpGain
+      ),
+      durationMs: 4200,
+    });
+  }
+
+  function completePomodoro(): void {
+    playTone('pomo');
+    const wasFocus = pomodoro.value.mode === 'focus';
+    if (wasFocus) {
+      stats.value = {
+        ...stats.value,
+        completedPomodoros: stats.value.completedPomodoros + 1,
+      };
+      addXpAndAffinity(XP_PER_COMPLETED_POMODORO, 5, 8);
+    }
+    publishPomodoro();
+
+    presenter.schedule({
+      priority: 'P0',
+      motion: 'happy',
+      expression: 'smile',
+      text: wasFocus
+        ? CARE_MESSAGES.focusCompleted(pomodoro.value.taskLabel)
+        : CARE_MESSAGES.breakCompleted,
+      durationMs: 7500,
+      quickReplies: wasFocus
+        ? [
+            {
+              label: CARE_MESSAGES.breakQuickReply,
+              action: {
+                type: 'emit',
+                app_id: 'internal',
+                event: 'pomodoro.start',
+                payload: CARE_MESSAGES.breakQuickReplyPayload,
+              },
+            },
+            {
+              label: CARE_MESSAGES.focusQuickReply,
+              action: {
+                type: 'emit',
+                app_id: 'internal',
+                event: 'pomodoro.start',
+                payload: {
+                  minutes: POMODORO_DEFAULT_MINUTES,
+                  mode: 'focus',
+                  label: pomodoro.value.taskLabel,
+                },
+              },
+            },
+          ]
+        : [
+            {
+              label: CARE_MESSAGES.nextFocusQuickReply,
+              action: {
+                type: 'emit',
+                app_id: 'internal',
+                event: 'pomodoro.start',
+                payload: {
+                  minutes: POMODORO_DEFAULT_MINUTES,
+                  mode: 'focus',
+                  label: DEFAULT_FOCUS_LABEL,
+                },
+              },
+            },
+          ],
+    });
+  }
+
+  function startPomodoro(
+    minutes: number = POMODORO_DEFAULT_MINUTES,
+    mode: PomodoroState['mode'] = 'focus',
+    label: string = DEFAULT_FOCUS_LABEL
+  ): void {
+    if (!isMasterWindow.value) {
+      bus?.postMessage({ rpcPomodoro: { cmd: 'start', minutes, mode, label } });
+      return;
+    }
+
+    stopTicking();
+    // A missing argument falls back to the default, but an explicit 0 clamps to the
+    // minimum rather than silently becoming a full session.
+    const requested = Number(minutes);
+    const clamped = clamp(
+      Number.isFinite(requested) ? requested : POMODORO_DEFAULT_MINUTES,
+      POMODORO_MIN_MINUTES,
+      POMODORO_MAX_MINUTES
+    );
+    const totalSec = Math.round(clamped * 60);
+    pomodoro.value = { running: true, mode, remainingSec: totalSec, totalSec, taskLabel: label };
+    publishPomodoro();
+
+    presenter.schedule({
+      priority: 'P1',
+      motion: 'happy',
+      expression: 'smile',
+      text:
+        mode === 'focus'
+          ? CARE_MESSAGES.focusStarted(clamped, label)
+          : CARE_MESSAGES.breakStarted(clamped),
+      durationMs: 4200,
+    });
+
+    tickTimer = window.setInterval(() => {
+      if (!pomodoro.value.running) return;
+      if (pomodoro.value.remainingSec > 1) {
+        pomodoro.value = { ...pomodoro.value, remainingSec: pomodoro.value.remainingSec - 1 };
+        publishPomodoro();
+        return;
+      }
+      pomodoro.value = { ...pomodoro.value, remainingSec: 0, running: false };
+      stopTicking();
+      completePomodoro();
+    }, POMODORO_TICK_MS);
+  }
+
+  function togglePomodoroPause(): void {
+    if (!isMasterWindow.value) {
+      bus?.postMessage({ rpcPomodoro: { cmd: 'pause' } });
+      return;
+    }
+    pomodoro.value = { ...pomodoro.value, running: !pomodoro.value.running };
+    publishPomodoro();
+  }
+
+  function stopPomodoro(): void {
+    if (!isMasterWindow.value) {
+      bus?.postMessage({ rpcPomodoro: { cmd: 'stop' } });
+      return;
+    }
+    stopTicking();
+    pomodoro.value = {
+      ...pomodoro.value,
       running: false,
-      mode: 'focus',
-      remainingSec: 25 * 60,
-      totalSec: 25 * 60,
-      taskLabel: '深度代码冲刺',
-    } as PomodoroState,
-    todos: loadStorage<TodoItem[]>(STORAGE_KEYS.TODOS, [
+      remainingSec: pomodoro.value.totalSec,
+    };
+    publishPomodoro();
+    presenter.schedule({
+      priority: 'P2',
+      motion: 'pat',
+      expression: 'neutral',
+      text: CARE_MESSAGES.stopped,
+      durationMs: 3000,
+    });
+  }
+
+  function addTodo(text: string, priority: TodoItem['priority'] = 'normal'): void {
+    const clean = text.trim();
+    if (!clean) return;
+    todos.value = [
       {
-        id: 'todo_1',
-        text: '体验右键【双轨陀螺仪星盘】与四大旗舰机体切换',
-        done: false,
-        createdAt: Date.now() - 3600_000,
-        priority: 'high',
-      },
-      {
-        id: 'todo_2',
-        text: '开启一个 25 分钟番茄专注冲刺',
-        done: false,
-        createdAt: Date.now() - 1800_000,
-        priority: 'normal',
-      },
-    ]),
-  }),
-
-  getters: {
-    xpProgressPercent(state): number {
-      return Math.min(100, Math.round((state.stats.xp / Math.max(1, state.stats.xpToNext)) * 100));
-    },
-    pomoProgressPercent(state): number {
-      const elapsed = Math.max(0, state.pomodoro.totalSec - state.pomodoro.remainingSec);
-      return Math.min(100, Math.round((elapsed / Math.max(1, state.pomodoro.totalSec)) * 100));
-    },
-    formattedPomodoroTime(state): string {
-      const mins = Math.floor(state.pomodoro.remainingSec / 60);
-      const secs = state.pomodoro.remainingSec % 60;
-      return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-    },
-  },
-
-  actions: {
-    initCareSync(
-      isMaster: boolean,
-      onScheduleAction: (task: ScheduledPetTask) => void,
-      getAudioPrefs: () => { dnd: boolean; volume: number; petName: string }
-    ): void {
-      this.isMasterWindow = isMaster;
-      if (careBusInitialized) return;
-      careBusInitialized = true;
-
-      careBus.onmessage = (ev) => {
-        const data = ev.data;
-        if (!data || typeof data !== 'object') return;
-        if (data.stats) this.stats = data.stats;
-        if (data.pomodoro) this.pomodoro = data.pomodoro;
-        if (data.todos) this.todos = data.todos;
-        if (this.isMasterWindow && data.rpcPomodoro) {
-          const { cmd, minutes, mode, label } = data.rpcPomodoro;
-          if (cmd === 'start') this.startPomodoro(minutes, mode, label, onScheduleAction, getAudioPrefs);
-          else if (cmd === 'pause') this.togglePomodoroPause();
-          else if (cmd === 'stop') this.stopPomodoro(onScheduleAction);
-        }
-      };
-    },
-
-    addXpAndAffinity(
-      xpDelta: number,
-      affinityDelta = 1,
-      moodDelta = 1,
-      onScheduleAction?: (task: ScheduledPetTask) => void,
-      audioPrefs?: { dnd: boolean; volume: number; petName: string }
-    ): void {
-      this.stats.totalInteractions += 1;
-      this.stats.xp += xpDelta;
-      this.stats.affinity = Math.min(100, Math.max(0, this.stats.affinity + affinityDelta));
-      this.stats.mood = Math.min(100, Math.max(0, this.stats.mood + moodDelta));
-
-      let leveledUp = false;
-      while (this.stats.xp >= this.stats.xpToNext) {
-        this.stats.xp -= this.stats.xpToNext;
-        this.stats.level += 1;
-        this.stats.xpToNext = Math.round(this.stats.xpToNext * 1.25);
-        this.stats.energy = 100;
-        leveledUp = true;
-      }
-      this.persistStats();
-
-      if (leveledUp && onScheduleAction) {
-        if (audioPrefs && !audioPrefs.dnd) {
-          globalLipSync.playUiFeedbackTone('levelup', audioPrefs.volume);
-        }
-        onScheduleAction({
-          priority: 'P0',
-          motion: 'happy',
-          expression: 'smile',
-          text: `🎉 羁绊突破！[${audioPrefs?.petName || 'CORE'}] 升至 Lv.${this.stats.level}！能量已满载 ✨`,
-          durationMs: 5200,
-        });
-      }
-    },
-
-    feedCareItem(
-      itemName: string,
-      energyGain: number,
-      affinityGain: number,
-      xpGain: number,
-      onScheduleAction: (task: ScheduledPetTask) => void,
-      audioPrefs: { dnd: boolean; volume: number; petName: string }
-    ): void {
-      if (!audioPrefs.dnd) {
-        globalLipSync.playUiFeedbackTone('feed', audioPrefs.volume);
-      }
-      this.stats.energy = Math.min(100, this.stats.energy + energyGain);
-      this.addXpAndAffinity(xpGain, affinityGain, 5, onScheduleAction, audioPrefs);
-      onScheduleAction({
-        priority: 'P1',
-        motion: 'feed',
-        expression: 'smile',
-        text: `🍬 已吸收【${itemName}】！能量 +${energyGain}% (当前 ${this.stats.energy}%) · 好感度 ${this.stats.affinity}% · EXP +${xpGain} ✨`,
-        durationMs: 4200,
-      });
-    },
-
-    persistStats(): void {
-      try {
-        localStorage.setItem(STORAGE_KEYS.STATS, JSON.stringify(this.stats));
-      } catch {
-        // Ignore quota error
-      }
-      careBus.postMessage({ stats: { ...this.stats } });
-    },
-
-    startPomodoro(
-      minutes = 25,
-      mode: 'focus' | 'short_break' | 'long_break' = 'focus',
-      label = '深度代码冲刺',
-      onScheduleAction?: (task: ScheduledPetTask) => void,
-      getAudioPrefs?: () => { dnd: boolean; volume: number; petName: string }
-    ): void {
-      if (!this.isMasterWindow) {
-        careBus.postMessage({ rpcPomodoro: { cmd: 'start', minutes, mode, label } });
-        return;
-      }
-
-      if (pomoTimer !== null) {
-        clearInterval(pomoTimer);
-        pomoTimer = null;
-      }
-
-      const clampedMins = Math.min(180, Math.max(1, Number(minutes) || 25));
-      const totalSec = Math.round(clampedMins * 60);
-      this.pomodoro = {
-        running: true,
-        mode,
-        remainingSec: totalSec,
-        totalSec,
-        taskLabel: label,
-      };
-      careBus.postMessage({ pomodoro: { ...this.pomodoro } });
-
-      onScheduleAction?.({
-        priority: 'P1',
-        motion: 'happy',
-        expression: 'smile',
-        text:
-          mode === 'focus'
-            ? `🍅 番茄专注已启动（${clampedMins} 分钟：${label}）！我会安静陪伴你冲刺~`
-            : `🍵 护眼休息已启动（${clampedMins} 分钟），起身喝口水、远眺放松一下吧！`,
-        durationMs: 4200,
-      });
-
-      pomoTimer = window.setInterval(() => {
-        if (!this.pomodoro.running) return;
-        if (this.pomodoro.remainingSec > 1) {
-          this.pomodoro.remainingSec -= 1;
-          careBus.postMessage({ pomodoro: { ...this.pomodoro } });
-        } else {
-          this.pomodoro.remainingSec = 0;
-          this.pomodoro.running = false;
-          if (pomoTimer !== null) {
-            clearInterval(pomoTimer);
-            pomoTimer = null;
-          }
-          this.completePomodoro(onScheduleAction, getAudioPrefs?.());
-        }
-      }, 1000);
-    },
-
-    togglePomodoroPause(): void {
-      if (!this.isMasterWindow) {
-        careBus.postMessage({ rpcPomodoro: { cmd: 'pause' } });
-        return;
-      }
-      this.pomodoro.running = !this.pomodoro.running;
-      careBus.postMessage({ pomodoro: { ...this.pomodoro } });
-    },
-
-    stopPomodoro(onScheduleAction?: (task: ScheduledPetTask) => void): void {
-      if (!this.isMasterWindow) {
-        careBus.postMessage({ rpcPomodoro: { cmd: 'stop' } });
-        return;
-      }
-      if (pomoTimer !== null) {
-        clearInterval(pomoTimer);
-        pomoTimer = null;
-      }
-      this.pomodoro.running = false;
-      this.pomodoro.remainingSec = this.pomodoro.totalSec;
-      careBus.postMessage({ pomodoro: { ...this.pomodoro } });
-      onScheduleAction?.({
-        priority: 'P2',
-        motion: 'pat',
-        expression: 'neutral',
-        text: '⏹️ 当前番茄计时已重置，随时准备开启下一轮专注！',
-        durationMs: 3000,
-      });
-    },
-
-    completePomodoro(
-      onScheduleAction?: (task: ScheduledPetTask) => void,
-      audioPrefs?: { dnd: boolean; volume: number; petName: string }
-    ): void {
-      if (audioPrefs && !audioPrefs.dnd) {
-        globalLipSync.playUiFeedbackTone('pomo', audioPrefs.volume);
-      }
-      const wasFocus = this.pomodoro.mode === 'focus';
-      if (wasFocus) {
-        this.stats.completedPomodoros += 1;
-        this.addXpAndAffinity(60, 5, 8, onScheduleAction, audioPrefs);
-      }
-      careBus.postMessage({ pomodoro: { ...this.pomodoro } });
-
-      onScheduleAction?.({
-        priority: 'P0',
-        motion: 'happy',
-        expression: 'smile',
-        text: wasFocus
-          ? `🏆 专注冲刺达成！【${this.pomodoro.taskLabel}】圆满完成，获得 +60 EXP！现在休息 5 分钟吧？`
-          : '⚡ 休息结束！精力已恢复满格，准备好开启下一轮专注了吗？',
-        durationMs: 7500,
-        quickReplies: wasFocus
-          ? [
-              {
-                label: '🍵 开启5m休息',
-                action: {
-                  type: 'emit',
-                  app_id: 'internal',
-                  event: 'pomodoro.start',
-                  payload: { minutes: 5, mode: 'short_break', label: '护眼补水休息' },
-                },
-              },
-              {
-                label: '🔥 再战25m',
-                action: {
-                  type: 'emit',
-                  app_id: 'internal',
-                  event: 'pomodoro.start',
-                  payload: { minutes: 25, mode: 'focus', label: this.pomodoro.taskLabel },
-                },
-              },
-            ]
-          : [
-              {
-                label: '🔥 开启25m专注',
-                action: {
-                  type: 'emit',
-                  app_id: 'internal',
-                  event: 'pomodoro.start',
-                  payload: { minutes: 25, mode: 'focus', label: '深度代码冲刺' },
-                },
-              },
-            ],
-      });
-    },
-
-    addTodo(text: string, priority: 'high' | 'normal' | 'low' = 'normal'): void {
-      const clean = text.trim();
-      if (!clean) return;
-      this.todos.unshift({
-        id: `todo_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
+        id: `${TODO_ID_PREFIX}${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
         text: clean,
         done: false,
         createdAt: Date.now(),
         priority,
-      });
-      this.persistTodos();
-    },
+      },
+      ...currentTodos(),
+    ];
+    publishTodos();
+  }
 
-    toggleTodo(
-      id: string,
-      onScheduleAction?: (task: ScheduledPetTask) => void,
-      audioPrefs?: { dnd: boolean; volume: number; petName: string }
-    ): void {
-      const item = this.todos.find((t) => t.id === id);
-      if (!item) return;
-      item.done = !item.done;
-      this.persistTodos();
-      if (item.done) {
-        this.addXpAndAffinity(20, 2, 3, onScheduleAction, audioPrefs);
-        onScheduleAction?.({
-          priority: 'P2',
-          motion: 'happy',
-          expression: 'smile',
-          text: `✅ 任务达成：【${item.text}】！奖励 +20 EXP ✨`,
-          durationMs: 3400,
-        });
-      }
-    },
+  function toggleTodo(id: string): void {
+    const current = currentTodos();
+    const target = current.find((t) => t.id === id);
+    if (!target) return;
+    const done = !target.done;
+    todos.value = current.map((t) => (t.id === id ? { ...t, done } : t));
+    publishTodos();
+    if (!done) return;
 
-    removeTodo(id: string): void {
-      this.todos = this.todos.filter((t) => t.id !== id);
-      this.persistTodos();
-    },
+    addXpAndAffinity(XP_PER_COMPLETED_TODO, 2, 3);
+    presenter.schedule({
+      priority: 'P2',
+      motion: 'happy',
+      expression: 'smile',
+      text: CARE_MESSAGES.todoDone(target.text),
+      durationMs: 3400,
+    });
+  }
 
-    clearCompletedTodos(): void {
-      const next = this.todos.filter((t) => !t.done);
-      if (next.length !== this.todos.length) {
-        this.todos = next;
-        this.persistTodos();
-      }
-    },
+  function removeTodo(id: string): void {
+    const current = currentTodos();
+    const next = current.filter((t) => t.id !== id);
+    if (next.length === current.length) return;
+    todos.value = next;
+    publishTodos();
+  }
 
-    persistTodos(): void {
-      try {
-        localStorage.setItem(STORAGE_KEYS.TODOS, JSON.stringify(this.todos));
-      } catch {
-        // Ignore quota error
-      }
-      careBus.postMessage({ todos: [...this.todos] });
-    },
-  },
+  function clearCompletedTodos(): void {
+    const current = currentTodos();
+    const next = current.filter((t) => !t.done);
+    if (next.length === current.length) return;
+    todos.value = next;
+    publishTodos();
+  }
+
+  function registerFilesAnalyzed(count: number): void {
+    if (count <= 0) return;
+    stats.value = { ...stats.value, filesAnalyzed: stats.value.filesAnalyzed + count };
+    publishStats();
+  }
+
+  function initCareSync(master: boolean): void {
+    isMasterWindow.value = master;
+    if (busBound || !bus) return;
+    busBound = true;
+
+    bus.onmessage = (ev: MessageEvent) => {
+      const data = ev.data;
+      if (!data || typeof data !== 'object') return;
+      if (data.stats) stats.value = data.stats;
+      if (data.pomodoro) pomodoro.value = data.pomodoro;
+      if (data.todos) todos.value = data.todos;
+      if (!isMasterWindow.value || !data.rpcPomodoro) return;
+
+      const { cmd, minutes, mode, label } = data.rpcPomodoro;
+      if (cmd === 'start') startPomodoro(minutes, mode, label);
+      else if (cmd === 'pause') togglePomodoroPause();
+      else if (cmd === 'stop') stopPomodoro();
+    };
+  }
+
+  function disposeCareSync(): void {
+    stopTicking();
+  }
+
+  return {
+    isMasterWindow,
+    stats,
+    pomodoro,
+    todos,
+    xpProgressPercent,
+    pomoProgressPercent,
+    formattedPomodoroTime,
+    bindPresenter,
+    initCareSync,
+    disposeCareSync,
+    addXpAndAffinity,
+    feedCareItem,
+    addTodo,
+    toggleTodo,
+    removeTodo,
+    clearCompletedTodos,
+    registerFilesAnalyzed,
+    setPomodoroTaskLabel,
+    startPomodoro,
+    togglePomodoroPause,
+    stopPomodoro,
+  };
 });

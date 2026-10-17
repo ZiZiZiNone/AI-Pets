@@ -10,10 +10,11 @@
         <div class="pomo-meta">
           <div class="pomo-input-group">
             <input
-              v-model="careStore.pomodoro.taskLabel"
+              :value="careStore.pomodoro.taskLabel"
               type="text"
               class="pomo-task-input"
               placeholder="当前专注目标..."
+              @input="handleTaskLabelInput(($event.target as HTMLInputElement).value)"
               @focus="emit('input-focus')"
               @blur="emit('input-blur')"
             />
@@ -25,8 +26,7 @@
               class="pomo-min-input"
               title="自定义分钟数 (1~180m)"
               @focus="emit('input-focus')"
-              @blur="emit('input-blur')"
-            />
+              @blur="emit('input-blur')"            />
           </div>
           <div class="cyber-slider-track" style="height: 5px">
             <div
@@ -37,9 +37,9 @@
           <div class="pomo-btn-row">
             <button
               class="cyber-action-btn primary"
-              @click="petStore.startPomodoro(customMinutes || 25, 'focus', careStore.pomodoro.taskLabel)"
+              @click="petStore.startPomodoro(customMinutes || POMODORO_DEFAULT_MINUTES, 'focus', careStore.pomodoro.taskLabel)"
             >
-              🔥 {{ customMinutes || 25 }}m 专注
+              🔥 {{ customMinutes || POMODORO_DEFAULT_MINUTES }}m 专注
             </button>
             <button
               class="cyber-action-btn"
@@ -131,6 +131,7 @@
 import { ref } from 'vue';
 import { usePetStore } from '@/store/petStore';
 import { useCareStore } from '@/store/careStore';
+import { POMODORO_DEFAULT_MINUTES } from '@/constants/timing';
 
 const emit = defineEmits<{
   (e: 'input-focus'): void;
@@ -141,9 +142,15 @@ const emit = defineEmits<{
 const petStore = usePetStore();
 const careStore = useCareStore();
 
-const customMinutes = ref<number>(25);
+const customMinutes = ref<number>(POMODORO_DEFAULT_MINUTES);
 const newTodoText = ref<string>('');
 const newTodoPriority = ref<'high' | 'normal' | 'low'>('normal');
+
+// Writing the label straight into store state would skip the cross-window broadcast,
+// so the companion commits it through the store action instead of binding v-model.
+function handleTaskLabelInput(value: string): void {
+  careStore.setPomodoroTaskLabel(value);
+}
 
 function handleAddTodo(): void {
   const clean = newTodoText.value.trim();

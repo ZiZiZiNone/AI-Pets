@@ -19,8 +19,8 @@
         <line
           :x1="item.x"
           :y1="item.y"
-          :x2="item.targetX ?? item.x + 120"
-          :y2="item.targetY ?? item.y + 80"
+          :x2="item.targetX ?? item.x + HUD_DEFAULT_ARROW_DX"
+          :y2="item.targetY ?? item.y + HUD_DEFAULT_ARROW_DY"
           :stroke="item.color || '#38bdf8'"
           stroke-width="2.5"
           stroke-dasharray="8 4"
@@ -68,6 +68,12 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import type { HudAnnotation } from '@/types/pet';
+import {
+  HUD_COUNTDOWN_TICK_MS,
+  HUD_DEFAULT_ARROW_DX,
+  HUD_DEFAULT_ARROW_DY,
+  HUD_EXPIRY_THRESHOLD,
+} from '@/constants/timing';
 
 const annotations = ref<HudAnnotation[]>([]);
 const unlistenFns: UnlistenFn[] = [];
@@ -106,34 +112,40 @@ function upsertAnnotations(incoming: HudAnnotation[]): void {
 }
 
 onMounted(async () => {
-  unlistenFns.push(
-    await listen<{
-      annotation?: HudAnnotation;
-      annotations?: HudAnnotation[];
-    }>('hud-draw', (evt) => {
-      const p = evt.payload;
-      if (Array.isArray(p.annotations)) {
-        upsertAnnotations(p.annotations);
-      } else if (p.annotation) {
-        upsertAnnotations([p.annotation]);
-      } else if ('x' in p && 'y' in p) {
-        upsertAnnotations([p as unknown as HudAnnotation]);
-      }
-    })
-  );
+  // Outside the Tauri shell `listen` rejects. Without this guard the rejection escapes
+  // onMounted and the countdown interval below is never scheduled.
+  try {
+    unlistenFns.push(
+      await listen<{
+        annotation?: HudAnnotation;
+        annotations?: HudAnnotation[];
+      }>('hud-draw', (evt) => {
+        const p = evt.payload;
+        if (Array.isArray(p.annotations)) {
+          upsertAnnotations(p.annotations);
+        } else if (p.annotation) {
+          upsertAnnotations([p.annotation]);
+        } else if ('x' in p && 'y' in p) {
+          upsertAnnotations([p as unknown as HudAnnotation]);
+        }
+      })
+    );
 
-  unlistenFns.push(
-    await listen<{ id?: string; app_id?: string }>('hud-clear', (evt) => {
-      const { id, app_id } = evt.payload || {};
-      if (id) {
-        annotations.value = annotations.value.filter((a) => a.id !== id);
-      } else if (app_id) {
-        annotations.value = annotations.value.filter((a) => a.app_id !== app_id);
-      } else {
-        annotations.value = [];
-      }
-    })
-  );
+    unlistenFns.push(
+      await listen<{ id?: string; app_id?: string }>('hud-clear', (evt) => {
+        const { id, app_id } = evt.payload || {};
+        if (id) {
+          annotations.value = annotations.value.filter((a) => a.id !== id);
+        } else if (app_id) {
+          annotations.value = annotations.value.filter((a) => a.app_id !== app_id);
+        } else {
+          annotations.value = [];
+        }
+      })
+    );
+  } catch {
+    // Browser preview has no native event bus.
+  }
 
   countdownInterval = window.setInterval(() => {
     const now = Date.now();
@@ -142,14 +154,12 @@ onMounted(async () => {
         return false;
       }
       if (typeof item.countdownSec === 'number') {
-        if (item.countdownSec <= 1) {
-          return false;
-        }
+        if (item.countdownSec <= HUD_EXPIRY_THRESHOLD) return false;
         item.countdownSec -= 1;
       }
       return true;
     });
-  }, 1000);
+  }, HUD_COUNTDOWN_TICK_MS);
 });
 
 onBeforeUnmount(() => {

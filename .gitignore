@@ -3,5 +3,6 @@ dist/
 src-tauri/target/
 src-tauri/gen/
 .pet_ws_token
+.toolchain-shim/
 *.log
 .DS_Store

@@ -1,18 +1,43 @@
 use crate::action_executor::{execute_whitelisted_action, SafeActionCommand};
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::hash_map::RandomState;
+use std::collections::{HashMap, HashSet};
 use std::fs;
+use std::hash::{BuildHasher, Hasher};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU16, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::net::TcpListener;
 use tokio::sync::{mpsc, Mutex};
 use tokio_tungstenite::accept_hdr_async;
 use tokio_tungstenite::tungstenite::handshake::server::{Request, Response};
 use tokio_tungstenite::tungstenite::Message;
+
+pub const DEFAULT_WS_PORT_RANGE: (u16, u16) = (9527, 9537);
+pub const DEFAULT_HEARTBEAT_SEC: u64 = 45;
+pub const MIN_HEARTBEAT_SEC: u64 = 15;
+const TOKEN_PREFIX: &str = "pet_tk_";
+
+/// Derives the per-process bus token from OS-seeded randomness.
+///
+/// `RandomState` is seeded by the platform CSPRNG rather than by observable process
+/// metadata, so the token cannot be reconstructed by another local process the way a
+/// PID-derived value could.
+fn generate_token() -> String {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or_default();
+    let mut hasher = RandomState::new().build_hasher();
+    hasher.write_u128(nanos);
+    hasher.write_u32(std::process::id());
+    let primary = hasher.finish();
+    let secondary = RandomState::new().build_hasher().finish();
+    format!("{}{:016x}{:016x}", TOKEN_PREFIX, primary, secondary)
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IncomingWsPacket {
@@ -32,51 +57,33 @@ pub struct IncomingWsPacket {
 }
 
 pub struct WsCommandBroker {
-    pub expected_token: String,
+    expected_token: String,
     pub bound_port: AtomicU16,
     pub heartbeat_timeout_sec: AtomicU64,
     pub client_count: AtomicUsize,
-    pub queue: Mutex<VecDeque<IncomingWsPacket>>,
     pub clients: Mutex<HashMap<usize, (String, mpsc::UnboundedSender<Message>)>>,
 }
 
 impl WsCommandBroker {
     pub fn init_with_token_file(token_path: PathBuf) -> Arc<Self> {
-        let token = format!("pet_tk_{}", std::process::id());
+        let token = generate_token();
         let _ = fs::write(&token_path, &token);
         Arc::new(Self {
             expected_token: token,
-            bound_port: AtomicU16::new(9527),
-            heartbeat_timeout_sec: AtomicU64::new(45),
+            bound_port: AtomicU16::new(DEFAULT_WS_PORT_RANGE.0),
+            heartbeat_timeout_sec: AtomicU64::new(DEFAULT_HEARTBEAT_SEC),
             client_count: AtomicUsize::new(0),
-            queue: Mutex::new(VecDeque::with_capacity(64)),
             clients: Mutex::new(HashMap::new()),
         })
     }
 
-    pub async fn push_packet(&self, pkt: IncomingWsPacket) -> Result<(), &'static str> {
-        if pkt.msg_type.is_some() {
-            let provided = pkt.token.as_deref().unwrap_or("");
-            if provided != self.expected_token && provided != "dev_fallback_token" {
-                return Err("Unauthorized: Token mismatch");
-            }
+    /// Single authentication gate for the bus. Every inbound packet must present the
+    /// process token, regardless of which method it carries.
+    fn authorize(&self, provided: Option<&str>) -> bool {
+        match provided {
+            Some(token) => token == self.expected_token,
+            None => false,
         }
-
-        let mut q = self.queue.lock().await;
-        if q.len() >= 64 {
-            q.pop_front();
-        }
-        if pkt.priority.unwrap_or(0) > 0 {
-            q.push_front(pkt);
-        } else {
-            q.push_back(pkt);
-        }
-        Ok(())
-    }
-
-    pub async fn pop_next(&self) -> Option<IncomingWsPacket> {
-        let mut q = self.queue.lock().await;
-        q.pop_front()
     }
 
     pub async fn broadcast_event(
@@ -101,11 +108,7 @@ impl WsCommandBroker {
     }
 }
 
-pub async fn start_ws_server(
-    app: AppHandle,
-    port_range: (u16, u16),
-    broker: Arc<WsCommandBroker>,
-) {
+pub async fn start_ws_server(app: AppHandle, port_range: (u16, u16), broker: Arc<WsCommandBroker>) {
     let start_port = port_range.0.max(1024);
     let end_port = port_range.1.max(start_port);
 
@@ -151,9 +154,9 @@ pub async fn start_ws_server(
                         && !origin_str.starts_with("http://127.0.0.1")
                         && !origin_str.starts_with("https://tauri.localhost")
                     {
-                        let mut err_res = tokio_tungstenite::tungstenite::http::Response::new(Some(
-                            "Forbidden Origin".to_string(),
-                        ));
+                        let mut err_res = tokio_tungstenite::tungstenite::http::Response::new(
+                            Some("Forbidden Origin".to_string()),
+                        );
                         *err_res.status_mut() =
                             tokio_tungstenite::tungstenite::http::StatusCode::FORBIDDEN;
                         return Err(err_res);
@@ -186,11 +189,30 @@ pub async fn start_ws_server(
 
             let mut registered_app_ids: HashSet<String> = HashSet::new();
 
+            // The server drives the heartbeat. Relying on client-initiated Pings alone
+            // would drop healthy but quiet connections once the read timeout elapsed.
+            let ping_broker = broker_clone.clone();
+            let ping_tx = tx.clone();
+            let ping_task = tokio::spawn(async move {
+                let mut ticker = tokio::time::interval(Duration::from_secs(
+                    (ping_broker.heartbeat_timeout_sec.load(Ordering::Relaxed) / 2).max(1),
+                ));
+                loop {
+                    ticker.tick().await;
+                    if ping_tx
+                        .send(Message::Ping(Vec::<u8>::new().into()))
+                        .is_err()
+                    {
+                        break;
+                    }
+                }
+            });
+
             loop {
                 let hb_sec = broker_clone
                     .heartbeat_timeout_sec
                     .load(Ordering::Relaxed)
-                    .max(15);
+                    .max(MIN_HEARTBEAT_SEC);
                 let frame_res =
                     tokio::time::timeout(Duration::from_secs(hb_sec), read.next()).await;
 
@@ -211,6 +233,17 @@ pub async fn start_ws_server(
 
                 match serde_json::from_str::<IncomingWsPacket>(&raw_text) {
                     Ok(pkt) => {
+                        if !broker_clone.authorize(pkt.token.as_deref()) {
+                            let _ = tx.send(Message::Text(
+                                serde_json::json!({
+                                    "status": "error",
+                                    "reason": "Unauthorized: Token mismatch"
+                                })
+                                .to_string(),
+                            ));
+                            continue;
+                        }
+
                         let resolved_aid = pkt.app_id.clone().or_else(|| {
                             pkt.params
                                 .as_ref()
@@ -240,40 +273,31 @@ pub async fn start_ws_server(
                             continue;
                         }
 
-                        if let Err(err_msg) = broker_clone.push_packet(pkt).await {
-                            let _ = tx.send(Message::Text(
-                                serde_json::json!({"status": "error", "reason": err_msg})
-                                    .to_string(),
-                            ));
-                            continue;
-                        }
-
-                        if let Some(next_cmd) = broker_clone.pop_next().await {
-                            let mut action_result = String::from("queued");
-                            if next_cmd.msg_type.as_deref() == Some("safe_action") {
-                                if let Some(ref act) = next_cmd.action {
-                                    match execute_whitelisted_action(act) {
-                                        Ok(res) => action_result = res,
-                                        Err(err) => {
-                                            let _ = tx.send(Message::Text(
-                                                serde_json::json!({"status": "error", "reason": err})
-                                                    .to_string(),
-                                            ));
-                                            continue;
-                                        }
+                        let mut action_result = String::from("queued");
+                        if pkt.msg_type.as_deref() == Some("safe_action") {
+                            if let Some(ref act) = pkt.action {
+                                match execute_whitelisted_action(act) {
+                                    Ok(res) => action_result = res,
+                                    Err(err) => {
+                                        let _ = tx.send(Message::Text(
+                                            serde_json::json!({"status": "error", "reason": err})
+                                                .to_string(),
+                                        ));
+                                        continue;
                                     }
                                 }
                             }
-                            let _ = app_clone.emit("ws-external-command", &next_cmd);
-                            let _ = tx.send(Message::Text(
-                                serde_json::json!({
-                                    "status": "ok",
-                                    "queued": true,
-                                    "result": action_result
-                                })
-                                .to_string(),
-                            ));
                         }
+
+                        let _ = app_clone.emit("ws-external-command", &pkt);
+                        let _ = tx.send(Message::Text(
+                            serde_json::json!({
+                                "status": "ok",
+                                "queued": true,
+                                "result": action_result
+                            })
+                            .to_string(),
+                        ));
                     }
                     Err(e) => {
                         let _ = tx.send(Message::Text(
@@ -297,6 +321,7 @@ pub async fn start_ws_server(
                 let _ = app_clone.emit("hud-clear", serde_json::json!({ "app_id": app_id }));
             }
             write_task.abort();
+            ping_task.abort();
         });
     }
 }

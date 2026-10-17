@@ -5,6 +5,27 @@ import {
   resolvePetAssetUrl,
 } from './IPetAdapter';
 import { resolvePetTheme } from '@/store/themes';
+import {
+  ALPHA_MASK_ALPHA_THRESHOLD,
+  ALPHA_MASK_REBUILD_FRAMES,
+  ALPHA_MASK_SIZE,
+  BOUNCE_DAMPING,
+  BOUNCE_MIN_IMPACT_SPEED,
+  BOUNCE_SPEED_DIVISOR,
+  DEFAULT_GRAVITY_PX_S2,
+  GRAVITY_MAX_PX_S2,
+  GRAVITY_MIN_PX_S2,
+  LOOK_SMOOTHING_PER_SEC,
+  MAX_LANDING_SQUASH,
+  SPRITE_CENTER_Y_RATIO,
+  SPRITE_DRAW_HEIGHT_PX,
+  SPRITE_DRAW_WIDTH_PX,
+  SPRITE_FALLBACK_RADIUS_PX,
+  SPRITE_GROUND_OFFSET_PX,
+  SQUASH_DECAY_PER_SEC,
+  STAGE_HEIGHT_PX,
+  STAGE_WIDTH_PX,
+} from '@/constants/timing';
 import type { PetManifest } from '@/types/pet';
 
 interface OrbitalParticle {
@@ -50,7 +71,7 @@ export class SpriteAdapter implements IPetAdapter {
 
   private physicsY = 0;
   private velocityY = 0;
-  private gravityAccel = 1400;
+  private gravityAccel = DEFAULT_GRAVITY_PX_S2;
   private landingSquash = 0;
 
   private lookTarget = { x: 0, y: 0 };
@@ -58,10 +79,12 @@ export class SpriteAdapter implements IPetAdapter {
   private particles: OrbitalParticle[] = [];
   private bursts: InteractionBurst[] = [];
 
-  private readonly maskSize = 64;
+  private readonly maskSize = ALPHA_MASK_SIZE;
   private maskCanvas: HTMLCanvasElement;
   private maskCtx: CanvasRenderingContext2D | null;
-  private alphaBitmask = new Uint32Array(128);
+  private alphaBitmask = new Uint32Array(
+    (ALPHA_MASK_SIZE * ALPHA_MASK_SIZE) / 32
+  );
   private maskUpdateCounter = 0;
 
   constructor() {
@@ -84,7 +107,10 @@ export class SpriteAdapter implements IPetAdapter {
   }
 
   public setGravityAcceleration(accel: number): void {
-    this.gravityAccel = Math.max(200, Math.min(4000, accel));
+    this.gravityAccel = Math.max(
+      GRAVITY_MIN_PX_S2,
+      Math.min(GRAVITY_MAX_PX_S2, accel)
+    );
   }
 
   public spawnInteractionBurst(x: number, y: number, text = '+EXP'): void {
@@ -102,6 +128,13 @@ export class SpriteAdapter implements IPetAdapter {
     }
   }
 
+  private stageSize(): { w: number; h: number } {
+    return {
+      w: this.canvas?.clientWidth || STAGE_WIDTH_PX,
+      h: this.canvas?.clientHeight || STAGE_HEIGHT_PX,
+    };
+  }
+
   public async load(manifest: PetManifest, canvas: HTMLCanvasElement): Promise<void> {
     this.dispose();
     this.manifest = manifest;
@@ -116,8 +149,7 @@ export class SpriteAdapter implements IPetAdapter {
 
     const useHighDpi = canvas.dataset.highDpi !== '0';
     const dpr = useHighDpi ? Math.min(2, window.devicePixelRatio || 1) : 1;
-    const cssW = canvas.clientWidth || 360;
-    const cssH = canvas.clientHeight || 420;
+    const { w: cssW, h: cssH } = this.stageSize();
     canvas.width = Math.round(cssW * dpr);
     canvas.height = Math.round(cssH * dpr);
     if (this.ctx) {
@@ -174,8 +206,7 @@ export class SpriteAdapter implements IPetAdapter {
   }
 
   public lookAt(x: number, y: number): void {
-    const cssW = this.canvas?.clientWidth || 360;
-    const cssH = this.canvas?.clientHeight || 420;
+    const { w: cssW, h: cssH } = this.stageSize();
     this.lookTarget.x = Math.max(-1, Math.min(1, (x - cssW * 0.5) / (cssW * 0.5)));
     this.lookTarget.y = Math.max(-1, Math.min(1, (y - cssH * 0.5) / (cssH * 0.5)));
   }
@@ -190,8 +221,7 @@ export class SpriteAdapter implements IPetAdapter {
       return { hit: false };
     }
 
-    const cssW = this.canvas.clientWidth || 360;
-    const cssH = this.canvas.clientHeight || 420;
+    const { w: cssW, h: cssH } = this.stageSize();
 
     const declaredArea = matchDeclaredHitArea(this.manifest, x, y, cssW, cssH);
     if (declaredArea) {
@@ -222,7 +252,7 @@ export class SpriteAdapter implements IPetAdapter {
     const data = this.maskCtx.getImageData(0, 0, this.maskSize, this.maskSize).data;
     this.alphaBitmask.fill(0);
     for (let i = 0; i < this.maskSize * this.maskSize; i++) {
-      if (data[i * 4 + 3] >= 28) {
+      if (data[i * 4 + 3] >= ALPHA_MASK_ALPHA_THRESHOLD) {
         this.alphaBitmask[i >>> 5] |= 1 << (i & 31);
       }
     }
@@ -242,9 +272,12 @@ export class SpriteAdapter implements IPetAdapter {
 
       if (this.physicsY >= 0) {
         this.physicsY = 0;
-        if (Math.abs(this.velocityY) > 90) {
-          this.landingSquash = Math.min(0.12, Math.abs(this.velocityY) / 2800);
-          this.velocityY = -this.velocityY * 0.32;
+        if (Math.abs(this.velocityY) > BOUNCE_MIN_IMPACT_SPEED) {
+          this.landingSquash = Math.min(
+            MAX_LANDING_SQUASH,
+            Math.abs(this.velocityY) / BOUNCE_SPEED_DIVISOR
+          );
+          this.velocityY = -this.velocityY * BOUNCE_DAMPING;
         } else {
           this.velocityY = 0;
         }
@@ -252,7 +285,10 @@ export class SpriteAdapter implements IPetAdapter {
     }
 
     if (this.landingSquash > 0.002) {
-      this.landingSquash *= Math.max(0, 1 - deltaSec * 9);
+      this.landingSquash *= Math.max(
+        0,
+        1 - deltaSec * SQUASH_DECAY_PER_SEC
+      );
     } else {
       this.landingSquash = 0;
     }
@@ -266,18 +302,19 @@ export class SpriteAdapter implements IPetAdapter {
     this.stepPhysics(deltaSec);
 
     this.smoothLook.x +=
-      (this.lookTarget.x - this.smoothLook.x) * Math.min(1, deltaSec * 8);
+      (this.lookTarget.x - this.smoothLook.x) *
+      Math.min(1, deltaSec * LOOK_SMOOTHING_PER_SEC);
     this.smoothLook.y +=
-      (this.lookTarget.y - this.smoothLook.y) * Math.min(1, deltaSec * 8);
+      (this.lookTarget.y - this.smoothLook.y) *
+      Math.min(1, deltaSec * LOOK_SMOOTHING_PER_SEC);
 
-    const cssW = this.canvas.clientWidth || 360;
-    const cssH = this.canvas.clientHeight || 420;
+    const { w: cssW, h: cssH } = this.stageSize();
     const ctx = this.ctx;
 
     ctx.clearRect(0, 0, cssW, cssH);
 
     const cx = cssW * 0.5 + this.baseOffset.x;
-    const cy = cssH * 0.52 + this.baseOffset.y;
+    const cy = cssH * SPRITE_CENTER_Y_RATIO + this.baseOffset.y;
 
     let bobY = Math.sin(this.elapsedTime * 2.6) * 5.5 + this.physicsY;
     let scaleX = this.baseScale * (1 + this.landingSquash);
@@ -319,7 +356,7 @@ export class SpriteAdapter implements IPetAdapter {
     const activeGlowColor = expTintHex || primary;
 
     ctx.save();
-    ctx.translate(cx, cy + 132 * this.baseScale);
+    ctx.translate(cx, cy + SPRITE_GROUND_OFFSET_PX * this.baseScale);
     ctx.scale(1, 0.28);
     const ringRadius = Math.max(12, 72 * this.baseScale * (1 - bobY * 0.004));
     const grad = ctx.createRadialGradient(0, 0, 4, 0, 0, ringRadius);
@@ -351,14 +388,14 @@ export class SpriteAdapter implements IPetAdapter {
       ctx.fill();
     }
 
-    const drawW = 280;
-    const drawH = 298;
+    const drawW = SPRITE_DRAW_WIDTH_PX;
+    const drawH = SPRITE_DRAW_HEIGHT_PX;
     if (this.img && this.img.complete && this.img.naturalWidth > 0) {
       ctx.drawImage(this.img, -drawW * 0.5, -drawH * 0.5, drawW, drawH);
     } else {
       ctx.fillStyle = primary;
       ctx.beginPath();
-      ctx.arc(0, 0, 88, 0, Math.PI * 2);
+      ctx.arc(0, 0, SPRITE_FALLBACK_RADIUS_PX, 0, Math.PI * 2);
       ctx.fill();
     }
 
@@ -477,7 +514,7 @@ export class SpriteAdapter implements IPetAdapter {
     }
 
     this.maskUpdateCounter++;
-    if (this.maskUpdateCounter % 15 === 0) {
+    if (this.maskUpdateCounter % ALPHA_MASK_REBUILD_FRAMES === 0) {
       this.rebuildAlphaBitmask();
     }
   }

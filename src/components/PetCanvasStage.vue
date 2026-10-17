@@ -2,29 +2,31 @@
   <div
     ref="stageContainerRef"
     class="pet-canvas-stage"
+    :style="stageStyle"
     @mousemove="handleLocalMouseMove"
   >
     <canvas
       v-if="canvasMode === '2d'"
       ref="canvas2dRef"
       class="stage-canvas"
-      :data-high-dpi="petStore.settings.render.high_dpi ? '1' : '0'"
+      :data-high-dpi="highDpi ? '1' : '0'"
     ></canvas>
-    <canvas
-      v-else
-      ref="canvas3dRef"
-      class="stage-canvas"
-      :data-high-dpi="petStore.settings.render.high_dpi ? '1' : '0'"
-    ></canvas>
+    <canvas v-else ref="canvas3dRef" class="stage-canvas" :data-high-dpi="highDpi ? '1' : '0'"></canvas>
   </div>
 </template>
 
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { AdapterFactory } from '@/adapters/AdapterFactory';
 import type { HitTestResult, IPetAdapter } from '@/adapters/IPetAdapter';
 import { usePetStore } from '@/store/petStore';
-import type { PetManifest } from '@/types/pet';
+import type { AdapterType, PetManifest } from '@/types/pet';
+import {
+  DEFAULT_GRAVITY_PX_S2,
+  MAX_FRAME_DELTA_SEC,
+  STAGE_HEIGHT_PX,
+  STAGE_WIDTH_PX,
+} from '@/constants/timing';
 
 const petStore = usePetStore();
 
@@ -33,67 +35,119 @@ const canvas2dRef = ref<HTMLCanvasElement | null>(null);
 const canvas3dRef = ref<HTMLCanvasElement | null>(null);
 const canvasMode = ref<'2d' | '3d'>('2d');
 
+const stageStyle = {
+  width: `${STAGE_WIDTH_PX}px`,
+  height: `${STAGE_HEIGHT_PX}px`,
+};
+
+const highDpi = computed(() => petStore.settings.render.high_dpi);
+
 let adapter: IPetAdapter | null = null;
 let rafId: number | null = null;
+let loopRunning = false;
 let lastFrameTime = performance.now();
+let mountToken = 0;
+
+function disposeAdapter(): void {
+  adapter?.dispose();
+  adapter = null;
+}
+
+/**
+ * Adapters arrive asynchronously and loading a model can take hundreds of
+ * milliseconds, so every mount carries a token. A mount whose token is stale by the
+ * time its asset resolves disposes what it built instead of orphaning a renderer.
+ */
+async function buildAdapter(
+  type: AdapterType,
+  manifest: PetManifest,
+  canvas: HTMLCanvasElement,
+  token: number
+): Promise<IPetAdapter | null> {
+  const created = await AdapterFactory.createAdapter(type);
+  if (token !== mountToken) {
+    created.dispose();
+    return null;
+  }
+  await created.load(manifest, canvas);
+  if (token !== mountToken) {
+    created.dispose();
+    return null;
+  }
+  created.setGravityAcceleration?.(
+    petStore.settings.behavior.gravity_acceleration || DEFAULT_GRAVITY_PX_S2
+  );
+  created.playMotion(petStore.activeMotion || 'idle');
+  created.setExpression(petStore.activeExpression || 'neutral');
+  return created;
+}
 
 async function mountManifest(manifest: PetManifest | null): Promise<void> {
   if (!manifest) return;
-
-  if (adapter) {
-    adapter.dispose();
-    adapter = null;
-  }
+  const token = ++mountToken;
+  disposeAdapter();
 
   canvasMode.value = manifest.type === 'vrm' ? '3d' : '2d';
   await nextTick();
+  if (token !== mountToken) return;
 
-  const targetCanvas =
-    canvasMode.value === '3d' ? canvas3dRef.value : canvas2dRef.value;
-  if (!targetCanvas) return;
+  const primaryCanvas = canvasMode.value === '3d' ? canvas3dRef.value : canvas2dRef.value;
+  if (!primaryCanvas) return;
 
   try {
-    adapter = await AdapterFactory.createAdapter(manifest.type);
-    await adapter.load(manifest, targetCanvas);
-    adapter.setGravityAcceleration?.(
-      petStore.settings.behavior.gravity_acceleration || 1400
-    );
-    adapter.playMotion(petStore.activeMotion || 'idle');
-    adapter.setExpression(petStore.activeExpression || 'neutral');
+    const built = await buildAdapter(manifest.type, manifest, primaryCanvas, token);
+    if (!built) return;
+    adapter = built;
+    ensureRenderLoop();
+    return;
   } catch (err) {
-    console.warn(
-      `[PetCanvasStage] Failed to load ${manifest.type} adapter for ${manifest.id}, falling back to SpriteAdapter:`,
-      err
-    );
-    canvasMode.value = '2d';
-    await nextTick();
-    if (canvas2dRef.value) {
-      adapter = await AdapterFactory.createAdapter('sprite');
-      await adapter.load({ ...manifest, type: 'sprite' }, canvas2dRef.value);
-      adapter.setGravityAcceleration?.(
-        petStore.settings.behavior.gravity_acceleration || 1400
-      );
-    }
+    console.warn(`[stage] ${manifest.type} adapter failed for ${manifest.id}`, err);
+  }
+
+  if (token !== mountToken) return;
+  canvasMode.value = '2d';
+  await nextTick();
+  if (token !== mountToken) return;
+
+  const fallbackCanvas = canvas2dRef.value;
+  if (!fallbackCanvas) return;
+
+  try {
+    const fallback = await buildAdapter('sprite', { ...manifest, type: 'sprite' }, fallbackCanvas, token);
+    if (!fallback) return;
+    adapter = fallback;
+    ensureRenderLoop();
+  } catch (err) {
+    console.error(`[stage] sprite fallback also failed for ${manifest.id}`, err);
   }
 }
 
-function startRenderLoop(): void {
-  const step = (now: number) => {
-    rafId = requestAnimationFrame(step);
-    if (!adapter) return;
+/**
+ * The loop parks itself when no adapter is mounted and is restarted by the next
+ * successful mount, so it can never spin forever rendering nothing.
+ */
+function ensureRenderLoop(): void {
+  if (loopRunning) return;
+  loopRunning = true;
+
+  const step = (now: number): void => {
+    const active = adapter;
+    if (!active) {
+      loopRunning = false;
+      rafId = null;
+      return;
+    }
 
     const targetFps = petStore.effectiveTargetFps;
-    if (targetFps <= 0) return;
-
-    const minInterval = 1000 / targetFps;
-    const elapsedMs = now - lastFrameTime;
-    if (elapsedMs < minInterval) return;
-
-    const deltaSec = Math.min(0.1, elapsedMs / 1000);
-    lastFrameTime = now;
-
-    adapter.setMouthOpen(petStore.mouthOpenY, petStore.lipSync.mouthFormX);
-    adapter.renderFrame(deltaSec);
+    if (targetFps > 0) {
+      const elapsedMs = now - lastFrameTime;
+      if (elapsedMs >= 1000 / targetFps) {
+        lastFrameTime = now;
+        active.setMouthOpen(petStore.mouthOpenY, petStore.lipSync.mouthFormX);
+        active.renderFrame(Math.min(MAX_FRAME_DELTA_SEC, elapsedMs / 1000));
+      }
+    }
+    rafId = requestAnimationFrame(step);
   };
 
   lastFrameTime = performance.now();
@@ -101,18 +155,13 @@ function startRenderLoop(): void {
 }
 
 function handleLocalMouseMove(e: MouseEvent): void {
-  if (!stageContainerRef.value) return;
-  const rect = stageContainerRef.value.getBoundingClientRect();
-  const x = e.clientX - rect.left;
-  const y = e.clientY - rect.top;
-  adapter?.lookAt(x, y);
+  const rect = stageContainerRef.value?.getBoundingClientRect();
+  if (!rect) return;
+  adapter?.lookAt(e.clientX - rect.left, e.clientY - rect.top);
 }
 
 function performHitTest(x: number, y: number): HitTestResult {
-  if (!adapter) {
-    return { hit: false };
-  }
-  return adapter.hitTest(x, y);
+  return adapter?.hitTest(x, y) ?? { hit: false, area: undefined };
 }
 
 function lookAtCursor(x: number, y: number): void {
@@ -127,66 +176,45 @@ function spawnInteractionBurst(x: number, y: number, text = '+5 EXP'): void {
   adapter?.spawnInteractionBurst?.(x, y, text);
 }
 
-defineExpose({
-  performHitTest,
-  lookAtCursor,
-  applyLiveTransform,
-  spawnInteractionBurst,
-});
+defineExpose({ performHitTest, lookAtCursor, applyLiveTransform, spawnInteractionBurst });
 
 watch(
-  [() => petStore.currentPet?.id, () => petStore.settings.render.high_dpi],
-  async () => {
-    await mountManifest(petStore.currentPet);
-  }
+  [() => petStore.currentPet?.id, highDpi],
+  () => void mountManifest(petStore.currentPet)
 );
 
 watch(
   () => petStore.settings.behavior.gravity_acceleration,
   (accel) => {
-    if (typeof accel === 'number') {
-      adapter?.setGravityAcceleration?.(accel);
-    }
+    if (typeof accel === 'number') adapter?.setGravityAcceleration?.(accel);
   }
 );
 
 watch(
   () => petStore.activeMotion,
-  (motion) => {
-    if (motion) {
-      adapter?.playMotion(motion);
-    }
-  }
+  (motion) => motion && adapter?.playMotion(motion)
 );
 
 watch(
   () => petStore.activeExpression,
-  (exp) => {
-    if (exp) {
-      adapter?.setExpression(exp);
-    }
-  }
+  (expression) => expression && adapter?.setExpression(expression)
 );
 
 watch(
   () => petStore.mouthOpenY,
-  (val) => {
-    adapter?.setMouthOpen(val, petStore.lipSync.mouthFormX);
-  }
+  (value) => adapter?.setMouthOpen(value, petStore.lipSync.mouthFormX)
 );
 
-onMounted(async () => {
-  await mountManifest(petStore.currentPet);
-  startRenderLoop();
-});
+onMounted(() => void mountManifest(petStore.currentPet));
 
 onBeforeUnmount(() => {
+  mountToken++;
   if (rafId !== null) {
     cancelAnimationFrame(rafId);
     rafId = null;
   }
-  adapter?.dispose();
-  adapter = null;
+  loopRunning = false;
+  disposeAdapter();
 });
 </script>
 
@@ -194,15 +222,13 @@ onBeforeUnmount(() => {
 .pet-canvas-stage {
   position: absolute;
   inset: 0;
-  width: 360px;
-  height: 420px;
   overflow: hidden;
   user-select: none;
 }
 
 .stage-canvas {
-  width: 360px;
-  height: 420px;
+  width: 100%;
+  height: 100%;
   display: block;
 }
 </style>

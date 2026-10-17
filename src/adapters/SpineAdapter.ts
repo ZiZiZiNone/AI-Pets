@@ -6,7 +6,41 @@ import {
   matchDeclaredHitArea,
   resolvePetAssetUrl,
 } from './IPetAdapter';
+import { SPINE_ANCHOR_Y_RATIO } from '@/constants/timing';
 import type { PetManifest } from '@/types/pet';
+
+const SPINE_MIX_DURATION_SEC = 0.25;
+const LOOK_HALF_WIDTH_PX = 180;
+const HEAD_MAX_ROTATION_DEG = 15;
+const HEAD_ROTATION_GAIN = 10;
+const JAW_SCALE_GAIN = 0.5;
+const JAW_ACTIVATION_THRESHOLD = 0.02;
+
+const HEAD_BONE_NAMES = ['head', 'Head'] as const;
+const JAW_BONE_NAMES = ['jaw', 'mouth'] as const;
+
+/**
+ * The runtime `Bone` object carries local transform fields that the shared `IBone`
+ * interface omits. Declaring the gap structurally keeps this adapter independent of
+ * the runtime package's internal type graph while still verifying the shape at runtime.
+ */
+interface BoneTransform {
+  rotation: number;
+  scaleY: number;
+}
+
+function findBoneTransform(
+  skeleton: Spine['skeleton'],
+  names: readonly string[]
+): BoneTransform | null {
+  for (const name of names) {
+    const bone = skeleton.findBone(name) as Partial<BoneTransform> | null;
+    if (bone && typeof bone.rotation === 'number' && typeof bone.scaleY === 'number') {
+      return bone as BoneTransform;
+    }
+  }
+  return null;
+}
 
 export class SpineAdapter implements IPetAdapter {
   public readonly canvasType = '2d' as const;
@@ -47,7 +81,7 @@ export class SpineAdapter implements IPetAdapter {
 
     if (resource && resource.spineData) {
       this.spine = new Spine(resource.spineData);
-      this.spine.stateData.defaultMix = 0.25;
+      this.spine.stateData.defaultMix = SPINE_MIX_DURATION_SEC;
       this.spine.autoUpdate = false;
       this.app.stage.addChild(this.spine as unknown as PIXI.DisplayObject);
       this.applyTransform(this.baseScale, this.baseOffset.x, this.baseOffset.y);
@@ -77,13 +111,12 @@ export class SpineAdapter implements IPetAdapter {
 
   public setExpression(expressionName: string): void {
     if (!this.spine) return;
-    const targetSkin = this.spine.spineData.skins?.find(
-      (s) => s.name.toLowerCase() === expressionName.toLowerCase()
+    const knownSkin = this.spine.spineData.skins?.some(
+      (skin) => skin.name.toLowerCase() === expressionName.toLowerCase()
     );
-    if (targetSkin) {
-      this.spine.skeleton.setSkin(targetSkin);
-      this.spine.skeleton.setSlotsToSetupPose();
-    }
+    if (!knownSkin) return;
+    this.spine.skeleton.setSkinByName(expressionName);
+    this.spine.skeleton.setSlotsToSetupPose();
   }
 
   public setMouthOpen(value: number): void {
@@ -92,12 +125,13 @@ export class SpineAdapter implements IPetAdapter {
 
   public lookAt(x: number, _y: number): void {
     if (!this.spine || !this.app) return;
-    const headBone =
-      this.spine.skeleton.findBone('head') || this.spine.skeleton.findBone('Head');
-    if (headBone) {
-      const nx = (x - this.app.screen.width * 0.5) / 180;
-      headBone.rotation = Math.max(-15, Math.min(15, nx * 10));
-    }
+    const headBone = findBoneTransform(this.spine.skeleton, HEAD_BONE_NAMES);
+    if (!headBone) return;
+    const nx = (x - this.app.screen.width * 0.5) / LOOK_HALF_WIDTH_PX;
+    headBone.rotation = Math.max(
+      -HEAD_MAX_ROTATION_DEG,
+      Math.min(HEAD_MAX_ROTATION_DEG, nx * HEAD_ROTATION_GAIN)
+    );
   }
 
   public applyTransform(scale: number, offsetX: number, offsetY: number): void {
@@ -107,7 +141,7 @@ export class SpineAdapter implements IPetAdapter {
 
     this.spine.scale.set(scale, scale);
     this.spine.x = this.app.screen.width * 0.5 + offsetX;
-    this.spine.y = this.app.screen.height * 0.82 + offsetY;
+    this.spine.y = this.app.screen.height * SPINE_ANCHOR_Y_RATIO + offsetY;
   }
 
   public hitTest(x: number, y: number): HitTestResult {
@@ -132,10 +166,9 @@ export class SpineAdapter implements IPetAdapter {
     if (!this.app || !this.spine) return;
     this.spine.update(deltaSec);
 
-    const jawBone =
-      this.spine.skeleton.findBone('jaw') || this.spine.skeleton.findBone('mouth');
-    if (jawBone && this.mouthOpenValue > 0.02) {
-      jawBone.scaleY = 1.0 + this.mouthOpenValue * 0.5;
+    const jawBone = findBoneTransform(this.spine.skeleton, JAW_BONE_NAMES);
+    if (jawBone && this.mouthOpenValue > JAW_ACTIVATION_THRESHOLD) {
+      jawBone.scaleY = 1.0 + this.mouthOpenValue * JAW_SCALE_GAIN;
     }
 
     this.app.renderer.render(this.app.stage);

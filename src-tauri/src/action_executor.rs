@@ -31,8 +31,16 @@ pub fn execute_whitelisted_action(cmd: &SafeActionCommand) -> Result<String, Str
         SafeActionCommand::ToggleStudio => Ok("action:toggle_studio".into()),
         SafeActionCommand::SwitchEmotion { emotion } => {
             let allowed = [
-                "idle", "happy", "angry", "glitch", "speaking", "sleep", "smile", "surprised",
-                "sleepy", "neutral",
+                "idle",
+                "happy",
+                "angry",
+                "glitch",
+                "speaking",
+                "sleep",
+                "smile",
+                "surprised",
+                "sleepy",
+                "neutral",
             ];
             if allowed.contains(&emotion.as_str()) {
                 Ok(format!("emotion:{}", emotion))

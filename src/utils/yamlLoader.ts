@@ -7,7 +7,7 @@ import type {
   PetManifest,
 } from '@/types/pet';
 
-export const BUILTIN_PET_IDS = [
+const BUILTIN_PET_IDS = [
   'aether_mecha_core',
   'nyx_abyssal_familiar',
   'pulse_glitch_phantom',
@@ -126,9 +126,11 @@ export function parsePetManifestYaml(rawText: string, fallbackId = 'aether_mecha
       },
       expressions:
         (raw.expressions as PetManifest['expressions']) || FALLBACK_PET_MANIFEST.expressions,
+      // A pet that omits this key has none of its own. Inheriting another pet's areas
+      // would answer clicks with the wrong labels and run the wrong actions.
       hit_areas: Array.isArray(raw.hit_areas)
         ? (raw.hit_areas as PetManifest['hit_areas'])
-        : FALLBACK_PET_MANIFEST.hit_areas,
+        : [],
       drop_handlers: Array.isArray(raw.drop_handlers)
         ? (raw.drop_handlers as PetManifest['drop_handlers'])
         : [],

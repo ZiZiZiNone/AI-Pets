@@ -13,12 +13,18 @@ import time
 
 TOKEN_FILE = Path(".pet_ws_token")
 DEFAULT_PORTS = range(9527, 9538)
+SELFTEST_TOKEN = "selftest_token"
 
 
 def read_local_token() -> str:
-    if TOKEN_FILE.exists():
-        return TOKEN_FILE.read_text(encoding="utf-8").strip()
-    return "dev_fallback_token"
+    if not TOKEN_FILE.exists():
+        raise ConnectionError(
+            f"{TOKEN_FILE} not found - start DesktopPetHost first so it can issue a bus token."
+        )
+    token = TOKEN_FILE.read_text(encoding="utf-8").strip()
+    if not token:
+        raise ConnectionError(f"{TOKEN_FILE} is empty - the host bus token was not issued.")
+    return token
 
 
 class StdlibWebSocketClient:
@@ -104,9 +110,24 @@ class StdlibWebSocketClient:
             for i in range(length):
                 payload[i] ^= mask_key[i % 4]
 
-        if (b1 & 0x0F) == 0x8:
-            return ""
+        opcode = b1 & 0x0F
+        if opcode == 0x8:
+            raise ConnectionError("Server closed the WebSocket connection")
+        if opcode == 0x9:
+            # The host drives the heartbeat, so a client that ignores Pings still
+            # answers them and keeps the connection alive.
+            self._send_control_frame(0xA, bytes(payload))
+            return self.recv_text()
         return payload.decode("utf-8", errors="replace")
+
+    def _send_control_frame(self, opcode: int, payload: bytes) -> None:
+        if not self.sock:
+            raise RuntimeError("Socket not connected")
+        mask_key = os.urandom(4)
+        header = bytearray([0x80 | opcode, 0x80 | len(payload)])
+        header.extend(mask_key)
+        masked = bytes(b ^ mask_key[i % 4] for i, b in enumerate(payload))
+        self.sock.sendall(bytes(header) + masked)
 
     def _recv_exact(self, n: int) -> bytes:
         assert self.sock is not None
@@ -162,6 +183,7 @@ def run_protocol_steps(ws: StdlibWebSocketClient, token: str, pause_sec: float =
     time.sleep(pause_sec)
 
     ws.send_json({
+        "token": token,
         "jsonrpc": "2.0",
         "id": 101,
         "app_id": "ai_copilot_plugin",
@@ -214,6 +236,7 @@ def run_protocol_steps(ws: StdlibWebSocketClient, token: str, pause_sec: float =
     time.sleep(pause_sec)
 
     ws.send_json({
+        "token": token,
         "jsonrpc": "2.0",
         "id": 102,
         "app_id": "ai_copilot_plugin",
@@ -239,6 +262,7 @@ def run_protocol_steps(ws: StdlibWebSocketClient, token: str, pause_sec: float =
     print("[4/5] hud.draw:", ws.recv_text())
 
     ws.send_json({
+        "token": token,
         "jsonrpc": "2.0",
         "id": 103,
         "app_id": "ai_copilot_plugin",
@@ -294,7 +318,9 @@ def run_selftest() -> int:
 
     ws = connect_to_active_pet_port(ports=[port])
     try:
-        run_protocol_steps(ws, read_local_token(), pause_sec=0.02)
+        # The mock host echoes any token, so the offline run uses a synthetic one
+        # instead of requiring a token file from a running host.
+        run_protocol_steps(ws, SELFTEST_TOKEN, pause_sec=0.02)
     finally:
         ws.close()
     t.join(timeout=2.0)
@@ -302,11 +328,67 @@ def run_selftest() -> int:
     return 0
 
 
+def expect_unauthorized(ws: StdlibWebSocketClient, payload: dict, label: str) -> bool:
+    ws.send_json(payload)
+    reply = json.loads(ws.recv_text())
+    rejected = reply.get("status") == "error" and "Unauthorized" in reply.get("reason", "")
+    mark = "PASS" if rejected else "FAIL"
+    print(f"[{mark}] {label} -> {reply}")
+    return rejected
+
+
+def run_auth_check() -> int:
+    """Every inbound packet must carry the process token, hotplug methods included."""
+    token = read_local_token()
+    ws = connect_to_active_pet_port()
+    try:
+        results = [
+            expect_unauthorized(
+                ws, {"method": "pet.act", "params": {}}, "pet.act without token"
+            ),
+            expect_unauthorized(
+                ws,
+                {"method": "menu.register", "token": "dev_fallback_token", "params": {}},
+                "menu.register with removed dev backdoor",
+            ),
+            expect_unauthorized(
+                ws,
+                {"method": "panel.open", "token": "wrong-token", "params": {}},
+                "panel.open with wrong token",
+            ),
+            expect_unauthorized(
+                ws, {"msg_type": "speak", "text": "no token"}, "speak without token"
+            ),
+            expect_unauthorized(
+                ws,
+                {
+                    "msg_type": "safe_action",
+                    "token": "wrong-token",
+                    "action": {
+                        "action_id": "switch_emotion",
+                        "params": {"emotion": "smile"},
+                    },
+                },
+                "safe_action with wrong token",
+            ),
+        ]
+    finally:
+        ws.close()
+
+    if all(results):
+        print(f"[PASS] All {len(results)} unauthorized packets were rejected.")
+        return 0
+    print(f"[FAIL] {results.count(False)} of {len(results)} unauthorized packets leaked.")
+    return 1
+
+
 def run_external_test() -> int:
     if "--selftest" in sys.argv:
         return run_selftest()
-    token = read_local_token()
+    if "--authcheck" in sys.argv:
+        return run_auth_check()
     try:
+        token = read_local_token()
         ws = connect_to_active_pet_port()
     except ConnectionError as err:
         print(f"[!] {err} (Tip: pass --selftest for offline protocol verification)")

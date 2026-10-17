@@ -22,14 +22,14 @@ export interface PetThemePalette {
   particleColor: string;
 }
 
-export interface PetAnimationClipDef {
+interface PetAnimationClipDef {
   file: string;
   loop?: boolean;
   duration_ms?: number;
   fps?: number;
 }
 
-export interface PetExpressionDef {
+interface PetExpressionDef {
   tint?: number;
   file?: string;
   blendshape?: Record<string, number>;
@@ -60,7 +60,7 @@ export interface HitAreaDef {
   action?: PetActionConfig;
 }
 
-export interface DropHandlerDef {
+interface DropHandlerDef {
   extensions: string[];
   motion?: string;
   expression?: string;
@@ -151,7 +151,7 @@ export interface DesktopWindowState {
 export interface HudAnnotation {
   id: string;
   app_id?: string;
-  type: 'box' | 'arrow' | 'badge';
+  type: 'box' | 'arrow';
   x: number;
   y: number;
   w?: number;
@@ -220,6 +220,20 @@ export interface SduiSchema {
   title: string;
   subtitle?: string;
   widgets: SduiWidget[];
+}
+
+/**
+ * Payload the stage hands to the companion window once it reports readiness.
+ *
+ * The companion webview finishes booting well after `open_companion_window` resolves,
+ * so the request is parked on the store and replayed on a `companion-ready` handshake
+ * rather than being pushed at a guessed delay.
+ */
+export interface CompanionLoadPayload {
+  mode: 'schema' | 'url';
+  title: string;
+  url?: string;
+  schema?: SduiSchema;
 }
 
 export interface HostSettings {
@@ -328,7 +342,6 @@ export interface PetBridgeSDK {
     exec(command: string, args?: string[], cwd?: string): Promise<string>;
   };
   panel: {
-    minimize(): Promise<void>;
     close(): Promise<void>;
   };
 }

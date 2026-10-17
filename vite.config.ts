@@ -3,18 +3,27 @@ import vue from '@vitejs/plugin-vue';
 import { resolve, sep } from 'path';
 import fs from 'fs';
 
-function petAssetsPlugin(): Plugin {
-  const mimeMap: Record<string, string> = {
-    '.svg': 'image/svg+xml',
-    '.yaml': 'text/yaml; charset=utf-8',
-    '.yml': 'text/yaml; charset=utf-8',
-    '.json': 'image/json; charset=utf-8',
-    '.png': 'image/png',
-    '.webp': 'image/webp',
-    '.vrm': 'model/gltf-binary',
-    '.vrma': 'model/gltf-binary',
-  };
+const MIME_TYPES: Record<string, string> = {
+  '.svg': 'image/svg+xml',
+  '.yaml': 'text/yaml; charset=utf-8',
+  '.yml': 'text/yaml; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.moc3': 'application/octet-stream',
+  '.atlas': 'text/plain; charset=utf-8',
+  '.skel': 'application/octet-stream',
+  '.png': 'image/png',
+  '.webp': 'image/webp',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.mp3': 'audio/mpeg',
+  '.wav': 'audio/wav',
+  '.ogg': 'audio/ogg',
+  '.m4a': 'audio/mp4',
+  '.vrm': 'model/gltf-binary',
+  '.vrma': 'model/gltf-binary',
+};
 
+function petAssetsPlugin(): Plugin {
   const petsRoot = resolve(__dirname, 'pets') + sep;
   const configRoot = resolve(__dirname, 'config') + sep;
 
@@ -33,12 +42,15 @@ function petAssetsPlugin(): Plugin {
               fs.statSync(filePath).isFile()
             ) {
               const ext = filePath.slice(filePath.lastIndexOf('.')).toLowerCase();
-              res.setHeader('Content-Type', mimeMap[ext] || 'application/octet-stream');
+              res.setHeader(
+                'Content-Type',
+                MIME_TYPES[ext] || 'application/octet-stream'
+              );
               fs.createReadStream(filePath).pipe(res);
               return;
             }
           } catch {
-            // Fall through on malformed URI
+            // Malformed URI: fall through to the default handler.
           }
         }
         next();
@@ -87,5 +99,11 @@ export default defineConfig({
         hud: resolve(__dirname, 'hud.html'),
       },
     },
+  },
+  test: {
+    environment: 'jsdom',
+    include: ['tests/**/*.spec.ts'],
+    setupFiles: ['tests/setup.ts'],
+    clearMocks: true,
   },
 });
