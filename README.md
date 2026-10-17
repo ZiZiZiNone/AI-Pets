@@ -5,6 +5,10 @@
 面向使用者的说明（安装、界面、托盘菜单、伴生面板、常见问题）见
 [`docs/使用说明书.md`](docs/使用说明书.md)；下面这份是给开发者看的。
 
+**想加一只自己的宠物？** 见 [`docs/宠物接入指南.md`](docs/宠物接入指南.md)。
+一只宠物就是 `pets/` 下的一个文件夹（`pet.yaml` + 资源），配色、感应区、台词、菜单、拖拽响应全部写在清单里，
+**不需要改任何源码**，保存即热重载。
+
 ## 直接下载安装包（推荐）
 
 不想在本机安装 Rust 与 MSVC 工具链，就用 GitHub Actions 构建好的安装包：
@@ -95,7 +99,7 @@ AI-Pets/
 ├── config/                       # 宿主全局配置（YAML，支持热重载）
 │   ├── settings.yaml
 │   └── global_menu.yaml
-├── pets/                         # 内置机体 manifest 与资产
+├── pets/                         # 宠物包：每只一个文件夹，pet.yaml + 资源（热重载，无需改代码）
 ├── src/
 │   ├── constants/
 │   │   ├── messages.ts           # 全部面向用户的文案（单一来源）
@@ -104,7 +108,7 @@ AI-Pets/
 │   │   ├── carePresenter.ts      # 养成域回报舞台的窄接口（依赖倒置）
 │   │   ├── careStore.ts          # 养成与番茄钟领域状态
 │   │   ├── petStore.ts           # 舞台状态、动作队列与跨窗口同步
-│   │   └── themes.ts             # 主题色板
+│   │   └── themes.ts             # 内置主题色板 + pet.yaml theme 的解析与合并
 │   ├── adapters/                 # 渲染适配器 (IPetAdapter / Sprite / Live2D / Spine / VRM)
 │   ├── components/               # 主舞台、语音气泡、星盘菜单、状态坞、蓝图微调舱
 │   ├── companion/                # 伴生控制台窗口（突触舱、专注待办、网页与 LLM 脑桥）
@@ -124,6 +128,8 @@ AI-Pets/
 │   ├── cycle-scan.mjs            # 导入环检测（已接入 npm run build）
 │   └── verify.mjs                # 发布前取证（生成 docs/VERIFICATION.md）
 ├── docs/
+│   ├── 宠物接入指南.md            # 如何新增/替换自己的宠物（不需要改源码）
+│   ├── 使用说明书.md              # 面向使用者的完整说明
 │   ├── VERIFICATION.md           # 验证报告（npm run verify 生成）
 │   └── standalone-release.png    # 脱离 dev server 的运行效果
 └── test_external_app.py          # Python 标准库 WebSocket 联调脚本
