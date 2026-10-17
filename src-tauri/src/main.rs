@@ -566,13 +566,7 @@ fn setup_system_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>>
         true,
         None::<&str>,
     )?;
-    let quit_item = MenuItem::with_id(
-        app,
-        "tray_quit",
-        "✕ 退出 AI-Pets",
-        true,
-        None::<&str>,
-    )?;
+    let quit_item = MenuItem::with_id(app, "tray_quit", "✕ 退出 AI-Pets", true, None::<&str>)?;
 
     let menu = Menu::with_items(
         app,
