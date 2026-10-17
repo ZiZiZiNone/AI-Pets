@@ -6,3 +6,4 @@ src-tauri/gen/
 .toolchain-shim/
 *.log
 .DS_Store
+__pycache__/
