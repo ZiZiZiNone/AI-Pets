@@ -43,6 +43,8 @@
         <span v-if="isTyping" class="cyber-caret">▮</span>
       </div>
 
+      <div v-if="voiceNotice" class="visor-voice-notice">{{ voiceNotice }}</div>
+
       <!-- Chamfered Tactical Quick-Reply Chips -->
       <div v-if="quickReplies.length > 0 && !isTyping" class="visor-actions">
         <button
@@ -68,7 +70,9 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { usePetStore } from '@/store/petStore';
 import { globalLipSync } from '@/utils/audioLipSync';
-import type { PetActionConfig } from '@/types/pet';
+import { synthesizeSpeech } from '@/utils/voiceEngine';
+import { normalizeVoiceSettings } from '@/utils/yamlLoader';
+import type { PetActionConfig, VoiceSettings } from '@/types/pet';
 import {
   TYPEWRITER_BUDGET_MS_PER_CHAR,
   TYPEWRITER_MAX_MS,
@@ -80,6 +84,7 @@ const petStore = usePetStore();
 
 const displayedText = ref<string>('');
 const isTyping = ref<boolean>(false);
+const voiceNotice = ref<string>('');
 let typewriterTimer: number | null = null;
 
 const fullText = computed(() => petStore.bubbleText);
@@ -140,20 +145,7 @@ function startTypewriter(text: string): void {
       petStore.broadcastLipSync(frame);
     });
   } else {
-    if (petStore.settings.audio.enable_tts && !petStore.dnd_mode) {
-      globalLipSync.speakWithWebSpeechTts(text, petStore.volume);
-    }
-    if (petStore.settings.audio.enable_lip_sync) {
-      // The synthetic mouth must finish with the typewriter, so it is budgeted off the
-      // same per-character cost rather than the bubble's longer display window.
-      const syncDuration = Math.min(
-        TYPEWRITER_MAX_MS,
-        Math.max(TYPEWRITER_MIN_MS, chars.length * TYPEWRITER_BUDGET_MS_PER_CHAR)
-      );
-      globalLipSync.startSyntheticLipSync(syncDuration, (frame) => {
-        petStore.broadcastLipSync(frame);
-      });
-    }
+    void speakWithConfiguredVoice(text, chars.length);
   }
 
   const step = () => {
@@ -175,6 +167,57 @@ function stopTypewriter(): void {
     clearTimeout(typewriterTimer);
     typewriterTimer = null;
   }
+}
+
+/**
+ * Voice settings for the pet currently on stage: the host's, with the pet's own overrides.
+ *
+ * Resolved per utterance rather than cached, so switching pets switches voice without a
+ * reload and an edit to either file takes effect on the next sentence.
+ */
+function effectiveVoice(): VoiceSettings {
+  return normalizeVoiceSettings(petStore.currentPet?.voice, petStore.settings.audio);
+}
+
+/** The mouth still has to move when there is no audio, so the fallback is never skipped. */
+function runSyntheticLipSync(charCount: number): void {
+  if (!petStore.settings.audio.enable_lip_sync) return;
+  // The synthetic mouth must finish with the typewriter, so it is budgeted off the
+  // same per-character cost rather than the bubble's longer display window.
+  const syncDuration = Math.min(
+    TYPEWRITER_MAX_MS,
+    Math.max(TYPEWRITER_MIN_MS, charCount * TYPEWRITER_BUDGET_MS_PER_CHAR)
+  );
+  globalLipSync.startSyntheticLipSync(syncDuration, (frame) => {
+    petStore.broadcastLipSync(frame);
+  });
+}
+
+async function speakWithConfiguredVoice(text: string, charCount: number): Promise<void> {
+  voiceNotice.value = '';
+  if (petStore.dnd_mode || !petStore.settings.audio.enable_tts) {
+    runSyntheticLipSync(charCount);
+    return;
+  }
+
+  const outcome = await synthesizeSpeech(text, effectiveVoice().tts);
+  if (outcome.kind === 'system_voice') {
+    globalLipSync.speakWithWebSpeechTts(text, petStore.volume, outcome);
+    runSyntheticLipSync(charCount);
+    return;
+  }
+  if (outcome.kind === 'audio') {
+    // The analyser drives the mouth from the real waveform, so no synthetic pass here.
+    void globalLipSync.playAudioWithLipSync(outcome.blob, (frame) => {
+      petStore.broadcastLipSync(frame);
+    });
+    return;
+  }
+
+  // Reported in the bubble instead of a log: a pet that silently stops speaking looks
+  // like a broken feature, and the reason is usually a one-field config fix.
+  voiceNotice.value = outcome.reason;
+  runSyntheticLipSync(charCount);
 }
 
 async function handleQuickReply(action: PetActionConfig): Promise<void> {
@@ -316,6 +359,16 @@ onBeforeUnmount(() => {
   margin-left: 3px;
   color: var(--theme-primary, #38bdf8);
   animation: pulse-caret 0.6s steps(2, start) infinite;
+}
+
+.visor-voice-notice {
+  margin-top: 6px;
+  padding-top: 5px;
+  border-top: 1px dashed rgba(244, 63, 94, 0.4);
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--theme-accent, #f43f5e);
+  word-break: break-word;
 }
 
 .visor-actions {

@@ -24,4 +24,85 @@ audio:
   enable_lip_sync: true
   rms_smoothing: 0.75
   rms_gain: 3.2
-  enable_tts: false
+  # 总开关：关掉后只显示气泡文字，不再朗读。三种合成方式互不影响，改 tts.provider 即可切换。
+  enable_tts: true
+
+  # 语音合成：web_speech（系统语音，零配置）| openai_compatible（云端/自建接口）| local_engine（本地命令行引擎）| none
+  tts:
+    provider: web_speech
+    web_speech:
+      lang: zh-CN
+      rate: 1.08
+      pitch: 1.05
+      # 留空表示使用系统默认音色；填系统语音的名称可指定音色（操作系统的语音列表里能查到）。
+      voice: ""
+    http:
+      api_url: "https://api.openai.com/v1/audio/speech"
+      api_key: ""
+      model: "tts-1"
+      voice: "alloy"
+      # 向接口索要的容器格式，同时也是播放时使用的类型：mp3 / wav / opus / aac / flac
+      format: "mp3"
+      speed: 1.0
+    # 完全离线的本地方案。默认参数模板针对 sherpa-onnx，已在 v1.13.8 上实跑验证。
+    # 换成别的引擎（piper、edge-tts CLI…）只改这里的 exe 与 args，不需要改代码。
+    local:
+      exe: ""
+      # 模型目录；会被代入 args 里的 {model_dir}
+      model_dir: ""
+      # args 是调用契约，逐项作为一个 argv 传给程序（绝不经过 shell）。
+      # 可用占位符：{model_dir} {text} {speed} {length_scale} {num_threads} {speaker_id} 由本程序填写；
+      # {input} {output} 由 Rust 侧填写（它自己管理的临时文件）；含路径分隔符的参数里出现 * 会取第一个匹配的文件。
+      # 模板里出现 {text} 时，文本作为参数传入；否则文本写入引擎的 stdin。
+      args:
+        - "--vits-model={model_dir}/*.onnx"
+        - "--vits-lexicon={model_dir}/lexicon.txt"
+        - "--vits-tokens={model_dir}/tokens.txt"
+        - "--tts-rule-fsts={model_dir}/phone.fst,{model_dir}/date.fst,{model_dir}/number.fst"
+        - "--num-threads={num_threads}"
+        - "--speed={speed}"
+        - "--output-filename={output}"
+        - "{text}"
+      # 追加参数：想加开关又不想改动上面的模板时用它，例如 "--sid=3"
+      extra_args: []
+      # 引擎产出音频的容器格式，决定临时文件后缀与播放类型
+      output_extension: "wav"
+      timeout_ms: 60000
+      # 多说话人模型才需要；单说话人模型会忽略
+      speaker_id: 0
+      speed: 1.0
+      num_threads: 2
+      # 留空即可；填一个 wav 绝对路径则直接识别该文件（无麦克风时用来验证本地识别链路）
+      input_path: ""
+
+  # 语音识别：默认关闭，避免启动时就弹出麦克风授权。
+  # 可选 none | openai_compatible | local_engine | web_speech
+  stt:
+    provider: none
+    # 识别完成后自动当作聊天输入发送
+    auto_send: false
+    web_speech:
+      lang: zh-CN
+      interim: false
+      max_ms: 15000
+    http:
+      api_url: "https://api.openai.com/v1/audio/transcriptions"
+      api_key: ""
+      model: "whisper-1"
+      language: "zh"
+      prompt: ""
+    local:
+      exe: ""
+      model_dir: ""
+      args:
+        - "--paraformer={model_dir}/*.onnx"
+        - "--tokens={model_dir}/tokens.txt"
+        - "--num-threads={num_threads}"
+        - "{input}"
+      extra_args: []
+      output_extension: "wav"
+      timeout_ms: 60000
+      speaker_id: 0
+      speed: 1.0
+      num_threads: 2
+      input_path: ""

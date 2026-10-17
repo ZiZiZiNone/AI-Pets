@@ -100,6 +100,17 @@ class FormantLipSyncEngine {
   }
 }
 
+/** Keep a bad config inside the range speech engines accept instead of failing silently. */
+function clampSpeechRate(rate: number | undefined): number {
+  if (typeof rate !== 'number' || !Number.isFinite(rate) || rate <= 0) return 1.08;
+  return Math.min(3, Math.max(0.5, rate));
+}
+
+function clampSpeechPitch(pitch: number | undefined): number {
+  if (typeof pitch !== 'number' || !Number.isFinite(pitch)) return 1.05;
+  return Math.min(2, Math.max(0, pitch));
+}
+
 const ZERO_FRAME: LipSyncFrame = {
   mouthOpenY: 0,
   mouthFormX: 0,
@@ -112,6 +123,7 @@ type UiSoundTone = 'pat' | 'feed' | 'levelup' | 'pomo' | 'click';
 class GlobalLipSyncController {
   private audioCtx: AudioContext | null = null;
   private activeAudioEl: HTMLAudioElement | null = null;
+  private activeObjectUrl: string | null = null;
   private activeSourceNode: MediaElementAudioSourceNode | null = null;
   private activeAnalyserNode: AnalyserNode | null = null;
   private rafId: number | null = null;
@@ -210,28 +222,59 @@ class GlobalLipSyncController {
     }
   }
 
-  public speakWithWebSpeechTts(text: string, volume = 0.85): void {
+  /** Parameters for the system voice, so a pet's voice is a setting and not a constant. */
+  public speakWithWebSpeechTts(
+    text: string,
+    volume = 0.85,
+    config?: { lang?: string; rate?: number; pitch?: number; voice?: string }
+  ): void {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
     try {
       window.speechSynthesis.cancel();
       const cleanText = text.replace(/[\u{1F300}-\u{1FAFF}⚡✦💥🎯🔮🍬🍅💧🧘]/gu, '').trim();
       if (!cleanText) return;
       const utter = new SpeechSynthesisUtterance(cleanText);
-      utter.lang = 'zh-CN';
+      utter.lang = config?.lang?.trim() || 'zh-CN';
       utter.volume = Math.min(1, Math.max(0, volume));
-      utter.rate = 1.08;
-      utter.pitch = 1.05;
+      utter.rate = clampSpeechRate(config?.rate);
+      utter.pitch = clampSpeechPitch(config?.pitch);
+      const preferred = config?.voice?.trim();
+      if (preferred) {
+        const match = window.speechSynthesis
+          .getVoices()
+          .find((voice) => voice.name === preferred);
+        if (match) utter.voice = match;
+      }
       window.speechSynthesis.speak(utter);
     } catch {
       // Ignore if speechSynthesis is unsupported in webview
     }
   }
 
+  /**
+   * Play audio and drive the mouth from its spectrum.
+   *
+   * Accepts a `Blob` as well as a URL: everything the host synthesises itself (a local
+   * engine's wav, an endpoint's mp3) arrives as bytes, and an object URL keeps those
+   * bytes out of the network stack entirely — which also sidesteps CORS, since a remote
+   * URL fed to a `crossOrigin` media element is refused outright when the server omits
+   * the headers.
+   */
   public async playAudioWithLipSync(
-    audioUrl: string,
+    source: string | Blob,
     onUpdate: (frame: LipSyncFrame) => void
   ): Promise<void> {
     this.stop(onUpdate);
+
+    let objectUrl: string | null = null;
+    let audioUrl: string;
+    if (typeof source === 'string') {
+      audioUrl = source;
+    } else {
+      objectUrl = URL.createObjectURL(source);
+      audioUrl = objectUrl;
+    }
+    this.activeObjectUrl = objectUrl;
 
     try {
       const ctx = this.ensureAudioContext();
@@ -241,7 +284,9 @@ class GlobalLipSyncController {
       }
 
       const audio = new Audio(audioUrl);
-      audio.crossOrigin = 'anonymous';
+      if (objectUrl === null) {
+        audio.crossOrigin = 'anonymous';
+      }
       this.activeAudioEl = audio;
 
       const engine = new FormantLipSyncEngine(
@@ -249,12 +294,12 @@ class GlobalLipSyncController {
         LIPSYNC_FFT_SIZE,
         this.rmsSmoothing
       );
-      const source = ctx.createMediaElementSource(audio);
-      engine.connectSource(source);
+      const sourceNode = ctx.createMediaElementSource(audio);
+      engine.connectSource(sourceNode);
       const analyser = engine.getAnalyser();
       analyser.connect(ctx.destination);
 
-      this.activeSourceNode = source;
+      this.activeSourceNode = sourceNode;
       this.activeAnalyserNode = analyser;
 
       const tick = () => {
@@ -359,6 +404,11 @@ class GlobalLipSyncController {
         // Ignore cleanup errors
       }
       this.activeAudioEl = null;
+    }
+    if (this.activeObjectUrl !== null) {
+      // Released only after the element stops pointing at it, or the audio would be cut.
+      URL.revokeObjectURL(this.activeObjectUrl);
+      this.activeObjectUrl = null;
     }
     if (onUpdate) {
       onUpdate(ZERO_FRAME);
