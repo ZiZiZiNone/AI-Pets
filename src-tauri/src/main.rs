@@ -273,33 +273,45 @@ fn mutate_canonical_state(
     state: State<'_, Mutex<CanonicalPetState>>,
     patch: serde_json::Value,
 ) -> CanonicalPetState {
-    let mut s = state.lock().unwrap();
-    if let Some(v) = patch.get("active_pet_id").and_then(|v| v.as_str()) {
-        s.active_pet_id = v.to_string();
-    }
-    if let Some(v) = patch.get("emotion").and_then(|v| v.as_str()) {
-        s.emotion = v.to_string();
-    }
-    if let Some(v) = patch.get("is_click_through").and_then(|v| v.as_bool()) {
-        s.is_click_through = v;
+    // The lock is released before anything reaches the window layer. `emit` and the
+    // Win32 calls go through the event loop, and the tray handlers below run on that
+    // same loop and take this lock, so holding it across them couples the two waits.
+    // Snapshots carry a revision and readers drop anything not newer, so an emit that
+    // leaves the lock slightly later than the mutation it describes is still correct.
+    let mut click_through = None;
+    let snapshot = {
+        let mut s = state.lock().unwrap();
+        if let Some(v) = patch.get("active_pet_id").and_then(|v| v.as_str()) {
+            s.active_pet_id = v.to_string();
+        }
+        if let Some(v) = patch.get("emotion").and_then(|v| v.as_str()) {
+            s.emotion = v.to_string();
+        }
+        if let Some(v) = patch.get("is_click_through").and_then(|v| v.as_bool()) {
+            s.is_click_through = v;
+            click_through = Some(v);
+        }
+        if let Some(v) = patch.get("volume").and_then(|v| v.as_f64()) {
+            s.volume = v as f32;
+        }
+        if let Some(v) = patch.get("studio_mode").and_then(|v| v.as_bool()) {
+            s.studio_mode = v;
+        }
+        if let Some(v) = patch.get("inline_hud").and_then(|v| v.as_bool()) {
+            s.inline_hud = v;
+        }
+        if let Some(v) = patch.get("dnd_mode").and_then(|v| v.as_bool()) {
+            s.dnd_mode = v;
+        }
+        s.revision += 1;
+        s.clone()
+    };
+
+    if let Some(ignore) = click_through {
         if let Some(main_win) = app.get_webview_window("main") {
-            let _ = apply_window_click_through(&main_win, v);
+            let _ = apply_window_click_through(&main_win, ignore);
         }
     }
-    if let Some(v) = patch.get("volume").and_then(|v| v.as_f64()) {
-        s.volume = v as f32;
-    }
-    if let Some(v) = patch.get("studio_mode").and_then(|v| v.as_bool()) {
-        s.studio_mode = v;
-    }
-    if let Some(v) = patch.get("inline_hud").and_then(|v| v.as_bool()) {
-        s.inline_hud = v;
-    }
-    if let Some(v) = patch.get("dnd_mode").and_then(|v| v.as_bool()) {
-        s.dnd_mode = v;
-    }
-    s.revision += 1;
-    let snapshot = s.clone();
     let _ = app.emit("pet-state:sync", &snapshot);
     snapshot
 }
@@ -552,35 +564,44 @@ fn setup_system_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>>
         .on_menu_event(|app_handle, event| match event.id.as_ref() {
             "tray_show_pet" => {
                 let state = app_handle.state::<Mutex<CanonicalPetState>>();
-                let mut s = state.lock().unwrap();
-                s.is_click_through = false;
-                s.revision += 1;
+                let snapshot = {
+                    let mut s = state.lock().unwrap();
+                    s.is_click_through = false;
+                    s.revision += 1;
+                    s.clone()
+                };
                 if let Some(main_win) = app_handle.get_webview_window("main") {
                     let _ = main_win.show();
                     let _ = main_win.center();
                     let _ = apply_window_click_through(&main_win, false);
                 }
-                let _ = app_handle.emit("pet-state:sync", &*s);
+                let _ = app_handle.emit("pet-state:sync", &snapshot);
             }
             "tray_open_companion" => {
                 let _ = open_companion_window(app_handle.clone());
             }
             "tray_toggle_click_through" => {
                 let state = app_handle.state::<Mutex<CanonicalPetState>>();
-                let mut s = state.lock().unwrap();
-                s.is_click_through = !s.is_click_through;
-                s.revision += 1;
+                let (snapshot, ignore) = {
+                    let mut s = state.lock().unwrap();
+                    s.is_click_through = !s.is_click_through;
+                    s.revision += 1;
+                    (s.clone(), s.is_click_through)
+                };
                 if let Some(main_win) = app_handle.get_webview_window("main") {
-                    let _ = apply_window_click_through(&main_win, s.is_click_through);
+                    let _ = apply_window_click_through(&main_win, ignore);
                 }
-                let _ = app_handle.emit("pet-state:sync", &*s);
+                let _ = app_handle.emit("pet-state:sync", &snapshot);
             }
             "tray_toggle_dnd" => {
                 let state = app_handle.state::<Mutex<CanonicalPetState>>();
-                let mut s = state.lock().unwrap();
-                s.dnd_mode = !s.dnd_mode;
-                s.revision += 1;
-                let _ = app_handle.emit("pet-state:sync", &*s);
+                let snapshot = {
+                    let mut s = state.lock().unwrap();
+                    s.dnd_mode = !s.dnd_mode;
+                    s.revision += 1;
+                    s.clone()
+                };
+                let _ = app_handle.emit("pet-state:sync", &snapshot);
             }
             "tray_quit" => {
                 let _ = fs::remove_file(".pet_ws_token");
