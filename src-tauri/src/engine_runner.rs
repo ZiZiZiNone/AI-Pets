@@ -84,6 +84,12 @@ pub struct EngineRequest {
     pub capture_output_extension: Option<String>,
 }
 
+/// Everything one engine run produced.
+///
+/// There is deliberately no `succeeded()` / `failure_reason()` helper here: the callers are
+/// the frontend, which already turns `exit_code` / `timed_out` / `stderr` into a user-facing
+/// sentence (`describeEngineFailure`). A second formatter in Rust would be unreachable code
+/// that drifts from the one actually shown.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct EngineResult {
     /// `None` when the process was killed for overrunning its deadline.
@@ -101,31 +107,6 @@ pub struct EngineResult {
     pub output_mime: Option<String>,
 }
 
-impl EngineResult {
-    /// True when the engine ran to completion and reported success.
-    pub fn succeeded(&self) -> bool {
-        !self.timed_out && self.exit_code == Some(0)
-    }
-
-    /// The most useful failure explanation available, for surfacing to the user.
-    pub fn failure_reason(&self, engine: &str) -> String {
-        if self.timed_out {
-            return format!("引擎 '{}' 超时未返回，已终止", engine);
-        }
-        let detail = if !self.stderr.is_empty() {
-            self.stderr.as_str()
-        } else if !self.stdout.is_empty() {
-            self.stdout.as_str()
-        } else {
-            "无输出"
-        };
-        match self.exit_code {
-            Some(code) => format!("引擎 '{}' 退出码 {}：{}", engine, code, detail),
-            None => format!("引擎 '{}' 被信号终止：{}", engine, detail),
-        }
-    }
-}
-
 /// A temp file owned by one engine call and removed when the call ends, on every path.
 struct TempFile {
     path: PathBuf,
@@ -135,9 +116,8 @@ impl TempFile {
     /// Reserve a unique path and create the file, for payloads we hand to the engine.
     fn with_bytes(bytes: &[u8], ext: &str) -> Result<Self, String> {
         let file = Self::reserve(ext);
-        fs::write(&file.path, bytes).map_err(|e| {
-            format!("无法写入临时文件 {}: {}", file.path.display(), e)
-        })?;
+        fs::write(&file.path, bytes)
+            .map_err(|e| format!("无法写入临时文件 {}: {}", file.path.display(), e))?;
         Ok(file)
     }
 
@@ -308,11 +288,7 @@ pub fn validate_engine_request(req: &EngineRequest) -> Result<(), String> {
         if sanitize_extension(ext).is_none() {
             return Err(format!("产出文件扩展名 '{}' 非法", ext));
         }
-        if !req
-            .args
-            .iter()
-            .any(|arg| arg.contains(OUTPUT_PLACEHOLDER))
-        {
+        if !req.args.iter().any(|arg| arg.contains(OUTPUT_PLACEHOLDER)) {
             // Without this the run would look configured while the caller could never
             // receive the audio it asked for.
             return Err(format!(
@@ -325,7 +301,11 @@ pub fn validate_engine_request(req: &EngineRequest) -> Result<(), String> {
 }
 
 /// Rewrite `{input}` / `{output}` in the argv, leaving every other entry untouched.
-fn substitute_placeholders(args: &[String], input: Option<&str>, output: Option<&str>) -> Vec<String> {
+fn substitute_placeholders(
+    args: &[String],
+    input: Option<&str>,
+    output: Option<&str>,
+) -> Vec<String> {
     args.iter()
         .map(|arg| {
             let mut value = arg.clone();
@@ -427,9 +407,9 @@ pub fn run_engine(req: &EngineRequest) -> Result<EngineResult, String> {
     };
 
     let output_file = match req.capture_output_extension.as_deref() {
-        Some(ext) => Some(TempFile::reserve(&sanitize_extension(ext).ok_or_else(|| {
-            format!("产出文件扩展名 '{}' 非法", ext)
-        })?)),
+        Some(ext) => Some(TempFile::reserve(
+            &sanitize_extension(ext).ok_or_else(|| format!("产出文件扩展名 '{}' 非法", ext))?,
+        )),
         None => None,
     };
 
@@ -621,8 +601,7 @@ mod tests {
     #[test]
     fn captures_stdout_and_reports_success() {
         let result = run_engine(&cmd_request("echo hello-engine")).expect("spawn");
-        assert!(result.succeeded(), "{:?}", result);
-        assert_eq!(result.exit_code, Some(0));
+        assert_eq!(result.exit_code, Some(0), "{:?}", result);
         assert!(result.stdout.contains("hello-engine"), "{:?}", result);
         assert!(!result.timed_out);
     }
@@ -637,15 +616,14 @@ mod tests {
     #[test]
     fn non_zero_exit_is_reported_not_swallowed() {
         let result = run_engine(&cmd_request("exit 3")).expect("spawn");
-        assert!(!result.succeeded());
         assert_eq!(result.exit_code, Some(3));
-        assert!(result.failure_reason("test-engine").contains("3"));
+        assert!(!result.timed_out, "{:?}", result);
     }
 
     #[test]
     fn empty_output_still_returns_a_result() {
         let result = run_engine(&cmd_request("exit 0")).expect("spawn");
-        assert!(result.succeeded(), "{:?}", result);
+        assert_eq!(result.exit_code, Some(0), "{:?}", result);
         assert!(result.stdout.is_empty());
         assert!(result.stderr.is_empty());
     }
@@ -677,7 +655,6 @@ mod tests {
             "kill took {:?}",
             started.elapsed()
         );
-        assert!(result.failure_reason("test-engine").contains("超时"));
     }
 
     #[test]
@@ -766,7 +743,7 @@ mod tests {
         // before the deadline is computed, so this only asserts the request is accepted.
         let mut req = cmd_request("exit 0");
         req.timeout_ms = Some(u64::MAX);
-        assert!(run_engine(&req).expect("spawn").succeeded());
+        assert_eq!(run_engine(&req).expect("spawn").exit_code, Some(0));
     }
 
     #[test]
@@ -791,16 +768,12 @@ mod tests {
         // exists, is named where `{input}` said, and is cleaned up afterwards.
         let payload = BASE64.encode(b"recorded-speech-bytes");
         let mut req = empty_request("cmd");
-        req.args = vec![
-            "/C".into(),
-            "type".into(),
-            INPUT_PLACEHOLDER.into(),
-        ];
+        req.args = vec!["/C".into(), "type".into(), INPUT_PLACEHOLDER.into()];
         req.input_bytes_base64 = Some(payload);
         req.input_extension = Some("wav".into());
 
         let result = run_engine(&req).expect("spawn");
-        assert!(result.succeeded(), "{:?}", result);
+        assert_eq!(result.exit_code, Some(0), "{:?}", result);
         assert_eq!(result.stdout, "recorded-speech-bytes");
     }
 
@@ -837,7 +810,7 @@ mod tests {
         req.capture_output_extension = Some("wav".into());
 
         let result = run_engine(&req).expect("spawn");
-        assert!(result.succeeded(), "{:?}", result);
+        assert_eq!(result.exit_code, Some(0), "{:?}", result);
         assert_eq!(result.output_mime.as_deref(), Some("audio/wav"));
         let bytes = BASE64
             .decode(result.output_base64.expect("captured bytes"))
@@ -849,10 +822,7 @@ mod tests {
     fn a_shared_temp_path_is_not_reused_between_calls() {
         // Two runs in a row must not collide, or the second would read the first's audio.
         let mut req = empty_request("cmd");
-        req.args = vec![
-            "/C".into(),
-            format!("echo run> {}", OUTPUT_PLACEHOLDER),
-        ];
+        req.args = vec!["/C".into(), format!("echo run> {}", OUTPUT_PLACEHOLDER)];
         req.capture_output_extension = Some("wav".into());
         let first = run_engine(&req).expect("spawn");
         let second = run_engine(&req).expect("spawn");
@@ -952,7 +922,10 @@ mod tests {
         let scratch = Scratch::new("globnone");
         let pattern = format!("{}\\*.onnx", scratch.path.display());
         let err = expand_arg_patterns(&[pattern]).unwrap_err();
-        assert!(err.contains(&scratch.path.to_string_lossy().into_owned()), "{err}");
+        assert!(
+            err.contains(&scratch.path.to_string_lossy().into_owned()),
+            "{err}"
+        );
         assert!(err.contains("请检查模型目录"), "{err}");
     }
 
@@ -985,4 +958,3 @@ mod tests {
         assert!(mime_for_extension("weird").starts_with("application/octet-stream"));
     }
 }
-
