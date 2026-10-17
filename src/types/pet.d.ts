@@ -312,7 +312,7 @@ export interface SystemTelemetry {
   os_version: string;
   arch: string;
   cpu_cores: number;
-  memory_usage_mb: number;
+  memory_usage_mb: number | null;
   uptime_sec: number;
   ws_port: number;
   connected_clients: number;

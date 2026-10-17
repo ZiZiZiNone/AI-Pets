@@ -101,7 +101,7 @@ pub struct SystemTelemetry {
     pub os_version: String,
     pub arch: String,
     pub cpu_cores: usize,
-    pub memory_usage_mb: u64,
+    pub memory_usage_mb: Option<u64>,
     pub uptime_sec: u64,
     pub ws_port: u16,
     pub connected_clients: usize,
@@ -162,7 +162,55 @@ fn parse_ws_config_from_settings() -> ((u16, u16), u64) {
     ((port_start, port_end), hb_sec)
 }
 
-fn query_process_memory_mb() -> u64 {
+/// Returns the `index`-th comma-separated field of `line`, honouring double quotes.
+///
+/// `tasklist /FO CSV` quotes any field containing a comma, so the memory column arrives
+/// as `"60,776 K"`. Splitting on `,` alone truncates that to `776 K` and reports the
+/// process as using 1 MB instead of 59 MB.
+fn csv_field(line: &str, index: usize) -> Option<String> {
+    let mut current = String::new();
+    let mut seen = 0usize;
+    let mut in_quotes = false;
+    let mut chars = line.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        match c {
+            '"' if in_quotes && chars.peek() == Some(&'"') => {
+                current.push('"');
+                chars.next();
+            }
+            '"' => in_quotes = !in_quotes,
+            ',' if !in_quotes => {
+                if seen == index {
+                    return Some(current);
+                }
+                seen += 1;
+                current.clear();
+            }
+            _ => current.push(c),
+        }
+    }
+
+    (seen == index).then_some(current)
+}
+
+/// Reads the memory column out of `tasklist /NH` output.
+///
+/// Returns `None` rather than a placeholder so the UI can say "unknown" instead of
+/// showing a fabricated reading.
+fn parse_tasklist_memory_mb(csv: &str) -> Option<u64> {
+    let line = csv.lines().find(|l| !l.trim().is_empty())?;
+    let kb: u64 = csv_field(line, 4)?
+        .chars()
+        .filter(char::is_ascii_digit)
+        .collect::<String>()
+        .parse()
+        .ok()?;
+    (kb > 0).then(|| (kb / 1024).max(1))
+}
+
+/// Resident memory of this process, or `None` when the platform query is unavailable.
+fn query_process_memory_mb() -> Option<u64> {
     #[cfg(target_os = "linux")]
     {
         if let Ok(status) = fs::read_to_string("/proc/self/status") {
@@ -174,7 +222,7 @@ fn query_process_memory_mb() -> u64 {
                         .and_then(|s| s.parse().ok())
                         .unwrap_or(0);
                     if kb > 0 {
-                        return (kb / 1024).max(1);
+                        return Some((kb / 1024).max(1));
                     }
                 }
             }
@@ -193,7 +241,7 @@ fn query_process_memory_mb() -> u64 {
                 .parse()
                 .unwrap_or(0);
             if kb > 0 {
-                return (kb / 1024).max(1);
+                return Some((kb / 1024).max(1));
             }
         }
     }
@@ -205,19 +253,13 @@ fn query_process_memory_mb() -> u64 {
             .args(["/FI", &format!("PID eq {}", pid), "/FO", "CSV", "/NH"])
             .output()
         {
-            let line = String::from_utf8_lossy(&out.stdout);
-            if let Some(last_col) = line.split(',').next_back() {
-                let digits: String = last_col.chars().filter(|c| c.is_ascii_digit()).collect();
-                if let Ok(kb) = digits.parse::<u64>() {
-                    if kb > 0 {
-                        return (kb / 1024).max(1);
-                    }
-                }
+            if let Some(mb) = parse_tasklist_memory_mb(&String::from_utf8_lossy(&out.stdout)) {
+                return Some(mb);
             }
         }
     }
 
-    42
+    None
 }
 
 #[tauri::command]
@@ -599,4 +641,77 @@ fn main() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running DesktopPetHost application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{csv_field, parse_tasklist_memory_mb};
+
+    const REAL: &str = "\"powershell.exe\",\"24924\",\"Console\",\"1\",\"60,776 K\"\r\n";
+
+    #[test]
+    fn quoted_field_containing_a_comma_stays_intact() {
+        // Splitting on `,` alone yields "776 K" here, which reads as 776 KB.
+        assert_eq!(csv_field(REAL.trim(), 4).as_deref(), Some("60,776 K"));
+        assert_eq!(csv_field(REAL.trim(), 0).as_deref(), Some("powershell.exe"));
+        assert_eq!(csv_field(REAL.trim(), 1).as_deref(), Some("24924"));
+    }
+
+    #[test]
+    fn escaped_quotes_are_treated_as_one() {
+        let line = "\"a\"\"b\",\"2\",\"3\",\"4\",\"5 K\"";
+        assert_eq!(csv_field(line, 0).as_deref(), Some("a\"b"));
+    }
+
+    #[test]
+    fn missing_field_returns_none() {
+        assert_eq!(csv_field("\"a\",\"b\"", 7), None);
+    }
+
+    #[test]
+    fn memory_is_read_from_the_real_tasklist_format() {
+        // 60,776 K is 59 MB; the old parser reported 1 MB.
+        assert_eq!(parse_tasklist_memory_mb(REAL), Some(59));
+    }
+
+    #[test]
+    fn memory_handles_values_without_a_thousands_separator() {
+        assert_eq!(
+            parse_tasklist_memory_mb("\"a.exe\",\"1\",\"C\",\"1\",\"912 K\"\r\n"),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn sub_megabyte_readings_round_up_to_one() {
+        assert_eq!(
+            parse_tasklist_memory_mb("\"a.exe\",\"1\",\"C\",\"1\",\"4 K\"\r\n"),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn unparsable_output_yields_none_rather_than_a_placeholder() {
+        // The previous fallback invented "42", which the UI rendered as a real reading.
+        assert_eq!(parse_tasklist_memory_mb(""), None);
+        assert_eq!(parse_tasklist_memory_mb("\r\n\r\n"), None);
+        assert_eq!(parse_tasklist_memory_mb("INFO: No tasks are running"), None);
+        assert_eq!(
+            parse_tasklist_memory_mb("\"a.exe\",\"1\",\"C\",\"1\",\"0 K\"\r\n"),
+            None
+        );
+        assert_eq!(
+            parse_tasklist_memory_mb("\"a.exe\",\"1\",\"C\",\"1\"\r\n"),
+            None
+        );
+    }
+
+    #[test]
+    fn a_very_large_reading_is_not_truncated() {
+        // 12,345,678 K must not be split into "345" like the old parser did.
+        assert_eq!(
+            parse_tasklist_memory_mb("\"a.exe\",\"1\",\"C\",\"1\",\"12,345,678 K\"\r\n"),
+            Some(12056)
+        );
+    }
 }

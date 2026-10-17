@@ -106,6 +106,7 @@ import WebMatrixTab from './WebMatrixTab.vue';
 import { usePetStore } from '@/store/petStore';
 import type { SduiSchema, SduiWidget, SystemTelemetry } from '@/types/pet';
 import { COMPANION_LOG_LIMIT, POD_NUDGE_LIMIT_PX } from '@/constants/timing';
+import { formatMemoryMb } from '@/constants/messages';
 
 /**
  * Writes a remote value into a widget without widening the discriminated union.
@@ -312,7 +313,7 @@ onMounted(async () => {
     const telemetry = await invoke<SystemTelemetry>('get_system_telemetry');
     syncWidgetsFromLiveState(telemetry);
     appendLogLine(
-      `[Telemetry] ${telemetry.os_name} (${telemetry.arch}) // WS :${telemetry.ws_port} // RAM ${telemetry.memory_usage_mb}MB`
+      `[Telemetry] ${telemetry.os_name} (${telemetry.arch}) // WS :${telemetry.ws_port} // RAM ${formatMemoryMb(telemetry.memory_usage_mb)}`
     );
   } catch {
     syncWidgetsFromLiveState();

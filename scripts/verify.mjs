@@ -183,9 +183,12 @@ function gitComparison() {
 
   const spot = ['package.json', 'src-tauri/Cargo.toml', 'src-tauri/tauri.conf.json', '.gitignore']
     .map((f) => {
-      const head = git('show', `HEAD:${f}`).split('\n').length;
-      const work = readFileSync(join(ROOT, f), 'utf8').split('\n').length;
-      return `| \`${f}\` | ${head} | ${work} | ${head === work ? 'same size' : 'changed'} |`;
+      // Compare content, not line counts: `git show` output is trimmed while the file on
+      // disk keeps its trailing newline, which made an identical file look "changed".
+      const head = git('show', `HEAD:${f}`);
+      const work = readFileSync(join(ROOT, f), 'utf8');
+      const same = head === work.trimEnd() && work.endsWith('\n');
+      return `| \`${f}\` | ${head.split('\n').length} | ${work.split('\n').length - 1} | ${same ? 'identical' : 'differs'} |`;
     })
     .join('\n');
 

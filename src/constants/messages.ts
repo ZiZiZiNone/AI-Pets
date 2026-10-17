@@ -7,6 +7,16 @@ import type { SlashCommandHint } from '@/types/pet';
  * duplicated copy, mixed presentation with logic and made localisation impossible.
  */
 
+/**
+ * Renders a memory reading, or `未知` when the platform query failed.
+ *
+ * The host reports `null` rather than a placeholder so an unavailable reading is never
+ * shown as a real number.
+ */
+export function formatMemoryMb(value: number | null): string {
+  return value === null ? '未知' : `${value}MB`;
+}
+
 export const SLASH_COMMAND_HINTS: SlashCommandHint[] = [
   { command: '/focus', usage: '/focus [分钟] [任务]', description: '开启番茄专注冲刺（默认 25m）', icon: '🍅' },
   { command: '/break', usage: '/break [分钟]', description: '开启护眼休息倒计时（默认 5m）', icon: '🍵' },
@@ -67,10 +77,10 @@ export const STAGE_MESSAGES = {
     os_name: string;
     arch: string;
     cpu_cores: number;
-    memory_usage_mb: number;
+    memory_usage_mb: number | null;
     ws_port: number;
   }) =>
-    `💻 系统巡检：${t.os_name} (${t.arch}) | CPU ${t.cpu_cores} 核 | 运存 ${t.memory_usage_mb}MB | WS :${t.ws_port} 在线`,
+    `💻 系统巡检：${t.os_name} (${t.arch}) | CPU ${t.cpu_cores} 核 | 运存 ${formatMemoryMb(t.memory_usage_mb)} | WS :${t.ws_port} 在线`,
   telemetryBrowser: (cores: number, fps: number, level: number) =>
     `💻 系统巡检：逻辑核心 ${cores} Threads | 渲染帧率 ${fps} FPS | 等级 Lv.${level}`,
   emotionSwitched: (emotion: string) => `⚡ 已响应外部指令切换状态：[${emotion.toUpperCase()}]`,
