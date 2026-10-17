@@ -1,6 +1,6 @@
 # Verification report
 
-Generated 2026-10-17 09:35:32 by `npm run verify`. Every number below is captured from a real run of
+Generated 2026-10-17 09:44:02 by `npm run verify`. Every number below is captured from a real run of
 the command shown beside it — regenerate with `npm run verify` to reproduce.
 
 ## 1. PE forensics — release binary
@@ -75,7 +75,7 @@ gzip streams in image: **38** — asset bodies are stored compressed, so file co
 
 ## 2. Working tree vs HEAD
 
-tracked files modified: **1** · untracked paths: **0** · **58** insertions / **37** deletions
+tracked files modified: **1** · untracked paths: **0** · **23** insertions / **6** deletions
 
 Untracked additions:
 
@@ -85,7 +85,7 @@ Per-file diffstat:
 
 | file | + | - |
 | --- | --- | --- |
-| `src-tauri/src/main.rs` | 58 | 37 |
+| `README.md` | 23 | 6 |
 
 HEAD-vs-working line counts:
 
@@ -170,22 +170,22 @@ exit code: **0** (0 = no value cycles) — 1 type-only cycle(s) recorded and acc
 Rust unit tests: **34 passed, 0 failed**.
 
 ```
+test action_executor::tests::unknown_action_id_does_not_deserialize ... ok
 test action_executor::tests::unit_variants_execute ... ok
-test action_executor::tests::pomodoro_falls_back_to_twenty_five_minutes ... ok
+test action_executor::tests::unknown_pet_is_rejected ... ok
+test tests::memory_handles_values_without_a_thousands_separator ... ok
+test action_executor::tests::allowed_emotions_are_accepted ... ok
 test action_executor::tests::emotion_outside_the_whitelist_is_rejected ... ok
 test action_executor::tests::known_pets_are_accepted ... ok
-test action_executor::tests::unknown_action_type_is_dispatched_not_executed ... ok
-test action_executor::tests::allowed_emotions_are_accepted ... ok
-test action_executor::tests::unknown_action_id_does_not_deserialize ... ok
 test tests::a_very_large_reading_is_not_truncated ... ok
 test tests::escaped_quotes_are_treated_as_one ... ok
-test tests::memory_handles_values_without_a_thousands_separator ... ok
+test action_executor::tests::pomodoro_falls_back_to_twenty_five_minutes ... ok
 test tests::memory_is_read_from_the_real_tasklist_format ... ok
-test action_executor::tests::unknown_pet_is_rejected ... ok
-test tests::missing_field_returns_none ... ok
-test tests::quoted_field_containing_a_comma_stays_intact ... ok
-test tests::unparsable_output_yields_none_rather_than_a_placeholder ... ok
+test action_executor::tests::unknown_action_type_is_dispatched_not_executed ... ok
 test tests::sub_megabyte_readings_round_up_to_one ... ok
+test tests::quoted_field_containing_a_comma_stays_intact ... ok
+test tests::missing_field_returns_none ... ok
+test tests::unparsable_output_yields_none_rather_than_a_placeholder ... ok
 test win32_window::tests::disabling_clears_the_whole_mask_in_one_step ... ok
 test win32_window::tests::disabling_leaves_unrelated_style_bits_intact ... ok
 test win32_window::tests::disabling_removes_mask_bits_the_original_had ... ok
@@ -197,10 +197,10 @@ test ws_server::tests::a_host_that_merely_starts_with_an_allowed_one_is_rejected
 test ws_server::tests::origins_outside_the_declared_set_are_rejected ... ok
 test ws_server::tests::the_declared_origins_are_allowed ... ok
 test ws_server::tests::consecutive_tokens_differ ... ok
-test ws_server::tests::authorize_accepts_only_the_exact_token ... ok
-test ws_server::tests::authorize_rejects_missing_wrong_and_near_miss_tokens ... ok
 test ws_server::tests::token_does_not_leak_the_process_id ... ok
 test ws_server::tests::token_has_the_documented_shape ... ok
+test ws_server::tests::authorize_rejects_missing_wrong_and_near_miss_tokens ... ok
+test ws_server::tests::authorize_accepts_only_the_exact_token ... ok
 test ws_server::tests::userinfo_cannot_masquerade_as_a_local_host ... ok
 test ws_server::tests::tokens_from_two_brokers_are_not_interchangeable ... ok
 test ws_server::tests::token_is_written_to_the_supplied_path ... ok
@@ -214,4 +214,4 @@ additionally read line-by-line; the substantive hunks are summarised after it.
 
 | file | + | - |
 | --- | --- | --- |
-| `src-tauri/src/main.rs` | 58 | 37 |
+| `README.md` | 23 | 6 |
