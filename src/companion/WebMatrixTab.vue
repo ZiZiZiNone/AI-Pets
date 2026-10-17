@@ -20,11 +20,21 @@
         </div>
       </div>
       <div class="llm-inputs-grid">
+        <select
+          v-model="petStore.llmConfig.provider"
+          class="matrix-url-input llm-provider-select"
+          @focus="emit('input-focus')"
+          @blur="onConfigBlur"
+        >
+          <option v-for="p in providers" :key="p.id" :value="p.id">
+            {{ p.label }}{{ p.requiresApiKey ? '' : '（无需 Key）' }}
+          </option>
+        </select>
         <input
           v-model="petStore.llmConfig.apiUrl"
           type="text"
           class="matrix-url-input"
-          placeholder="API 地址 (如 https://api.openai.com/v1/chat/completions)"
+          :placeholder="apiUrlPlaceholder"
           @focus="emit('input-focus')"
           @blur="onConfigBlur"
         />
@@ -41,7 +51,7 @@
             v-model="petStore.llmConfig.apiKey"
             type="password"
             class="matrix-url-input"
-            placeholder="API Key (留空则使用内置离线性格脑)"
+            :placeholder="apiKeyPlaceholder"
             @focus="emit('input-focus')"
             @blur="onConfigBlur"
           />
@@ -56,6 +66,8 @@
         />
       </div>
     </div>
+
+    <VoiceBridgePanel />
 
     <div class="matrix-address-bar">
       <span class="matrix-tag">URI //</span>
@@ -90,12 +102,32 @@
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { usePetStore } from '@/store/petStore';
+import VoiceBridgePanel from './VoiceBridgePanel.vue';
 import { requestLlmCompletion } from '@/utils/commandEngine';
+import { listLlmProviders, resolveLlmProvider } from '@/utils/llmProviders';
 import type { LlmBridgeConfig } from '@/types/pet';
 import { COMPANION_STATUS_RESET_MS, LLM_REPLY_BUBBLE_MS } from '@/constants/timing';
 import { UI_TONE_LABELS } from '@/constants/messages';
+
+const LLM_API_URL_PLACEHOLDERS: Record<string, string> = {
+  openai_compatible: 'API 地址 (如 https://api.deepseek.com/v1/chat/completions)',
+  anthropic: 'API 地址 (如 https://api.anthropic.com/v1/messages)',
+  ollama: '本地地址 (如 http://localhost:11434/api/chat)',
+};
+
+const providers = listLlmProviders();
+const apiUrlPlaceholder = computed(
+  () =>
+    LLM_API_URL_PLACEHOLDERS[resolveLlmProvider(petStore.llmConfig.provider).id] ??
+    'API 地址'
+);
+const apiKeyPlaceholder = computed(() =>
+  resolveLlmProvider(petStore.llmConfig.provider).requiresApiKey
+    ? 'API Key (留空则使用内置离线性格脑)'
+    : '本地模型无需 Key'
+);
 
 const props = defineProps<{
   initialUrl?: string;

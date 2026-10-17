@@ -7,15 +7,17 @@ import {
   DEFAULT_BREAK_LABEL,
   DEFAULT_FOCUS_LABEL,
   DEFAULT_PERSONA_ID,
-  DEFAULT_PET_NAME,
   FORTUNE_POOL,
-  LLM_DEFAULT_MODEL,
-  LLM_DEFAULT_SYSTEM_PROMPT,
-  LLM_MAX_TOKENS,
   PERSONA_MESSAGES,
   PERSONA_POOLS,
   PET_ALIASES,
 } from '@/constants/messages';
+import { buildPetSystemPrompt } from '@/utils/petPersona';
+import {
+  isLlmConfigUsable,
+  sendLlmChat,
+  type LlmProviderConfig,
+} from '@/utils/llmProviders';
 import {
   LIPSYNC_MAX_MS,
   LIPSYNC_MIN_MS,
@@ -170,40 +172,26 @@ export async function requestLlmCompletion(
   pet: PetManifest | null,
   llmConfig: LlmBridgeConfig
 ): Promise<string | null> {
-  if (!llmConfig.enabled || !llmConfig.apiKey || !llmConfig.apiUrl) return null;
+  const providerConfig: LlmProviderConfig = {
+    provider: llmConfig.provider,
+    apiUrl: llmConfig.apiUrl,
+    apiKey: llmConfig.apiKey,
+    model: llmConfig.model,
+    temperature: llmConfig.temperature,
+    maxTokens: llmConfig.maxTokens,
+  };
+  if (!isLlmConfigUsable(providerConfig)) return null;
 
-  try {
-    const res = await fetch(llmConfig.apiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${llmConfig.apiKey}`,
+  return sendLlmChat(
+    [
+      {
+        role: 'system',
+        content: buildPetSystemPrompt(pet, llmConfig.customSystemPrompt),
       },
-      body: JSON.stringify({
-        model: llmConfig.model || LLM_DEFAULT_MODEL,
-        messages: [
-          {
-            role: 'system',
-            content:
-              llmConfig.customSystemPrompt ||
-              LLM_DEFAULT_SYSTEM_PROMPT(
-                pet?.name || DEFAULT_PET_NAME,
-                pet?.description || ''
-              ),
-          },
-          { role: 'user', content: input },
-        ],
-        max_tokens: LLM_MAX_TOKENS,
-      }),
-    });
-
-    if (!res.ok) return null;
-    const data = await res.json();
-    const content = data?.choices?.[0]?.message?.content;
-    return typeof content === 'string' && content.trim() ? content.trim() : null;
-  } catch {
-    return null;
-  }
+      { role: 'user', content: input },
+    ],
+    providerConfig
+  );
 }
 
 function bubbleMsForText(text: string): number {
