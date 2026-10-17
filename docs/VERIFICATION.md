@@ -1,6 +1,6 @@
 # Verification report
 
-Generated 2026-10-17 01:08:17 by `npm run verify`. Every number below is captured from a real run of
+Generated 2026-10-17 01:09:41 by `npm run verify`. Every number below is captured from a real run of
 the command shown beside it — regenerate with `npm run verify` to reproduce.
 
 ## 1. PE forensics — release binary
@@ -75,7 +75,7 @@ gzip streams in image: **34** — asset bodies are stored compressed, so file co
 
 ## 2. Working tree vs HEAD
 
-tracked files modified: **7** · untracked paths: **0** · **176** insertions / **66** deletions
+tracked files modified: **0** · untracked paths: **0** · **0** insertions / **0** deletions
 
 Untracked additions:
 
@@ -85,19 +85,13 @@ Per-file diffstat:
 
 | file | + | - |
 | --- | --- | --- |
-| `docs/VERIFICATION.md` | 26 | 45 |
-| `package.json` | 1 | 1 |
-| `scripts/verify.mjs` | 6 | 3 |
-| `src-tauri/src/main.rs` | 128 | 13 |
-| `src/companion/CompanionApp.vue` | 2 | 1 |
-| `src/constants/messages.ts` | 12 | 2 |
-| `src/types/pet.d.ts` | 1 | 1 |
+
 
 HEAD-vs-working line counts:
 
 | file | HEAD lines | working lines | |
 | --- | --- | --- | --- |
-| `package.json` | 43 | 43 | differs |
+| `package.json` | 43 | 43 | identical |
 | `src-tauri/Cargo.toml` | 32 | 32 | identical |
 | `src-tauri/tauri.conf.json` | 87 | 87 | identical |
 | `.gitignore` | 8 | 8 | identical |
@@ -152,24 +146,24 @@ exit code: **0** (0 = no dead exports, 1 = findings present)
 Rust unit tests: **29 passed, 0 failed**.
 
 ```
-test action_executor::tests::pomodoro_falls_back_to_twenty_five_minutes ... ok
 test action_executor::tests::unit_variants_execute ... ok
-test action_executor::tests::allowed_emotions_are_accepted ... ok
+test action_executor::tests::pomodoro_falls_back_to_twenty_five_minutes ... ok
+test action_executor::tests::emotion_outside_the_whitelist_is_rejected ... ok
+test action_executor::tests::known_pets_are_accepted ... ok
 test action_executor::tests::unknown_action_type_is_dispatched_not_executed ... ok
+test action_executor::tests::allowed_emotions_are_accepted ... ok
 test action_executor::tests::unknown_action_id_does_not_deserialize ... ok
 test tests::escaped_quotes_are_treated_as_one ... ok
 test tests::memory_handles_values_without_a_thousands_separator ... ok
-test action_executor::tests::emotion_outside_the_whitelist_is_rejected ... ok
-test action_executor::tests::known_pets_are_accepted ... ok
 test tests::memory_is_read_from_the_real_tasklist_format ... ok
-test action_executor::tests::unknown_pet_is_rejected ... ok
 test tests::a_very_large_reading_is_not_truncated ... ok
+test action_executor::tests::unknown_pet_is_rejected ... ok
 test tests::missing_field_returns_none ... ok
 test tests::quoted_field_containing_a_comma_stays_intact ... ok
-test tests::sub_megabyte_readings_round_up_to_one ... ok
 test tests::unparsable_output_yields_none_rather_than_a_placeholder ... ok
 test win32_window::tests::disabling_clears_the_whole_mask_in_one_step ... ok
 test win32_window::tests::disabling_leaves_unrelated_style_bits_intact ... ok
+test tests::sub_megabyte_readings_round_up_to_one ... ok
 test win32_window::tests::disabling_removes_mask_bits_the_original_had ... ok
 test win32_window::tests::enabling_is_idempotent ... ok
 test win32_window::tests::enabling_sets_every_bit_in_the_mask ... ok
@@ -177,8 +171,8 @@ test win32_window::tests::round_trip_returns_the_original_style ... ok
 test ws_server::tests::token_does_not_leak_the_process_id ... ok
 test ws_server::tests::token_has_the_documented_shape ... ok
 test ws_server::tests::consecutive_tokens_differ ... ok
-test ws_server::tests::authorize_rejects_missing_wrong_and_near_miss_tokens ... ok
 test ws_server::tests::authorize_accepts_only_the_exact_token ... ok
+test ws_server::tests::authorize_rejects_missing_wrong_and_near_miss_tokens ... ok
 test ws_server::tests::tokens_from_two_brokers_are_not_interchangeable ... ok
 test ws_server::tests::token_is_written_to_the_supplied_path ... ok
 test result: ok. 29 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
@@ -191,10 +185,4 @@ additionally read line-by-line; the substantive hunks are summarised after it.
 
 | file | + | - |
 | --- | --- | --- |
-| `docs/VERIFICATION.md` | 26 | 45 |
-| `package.json` | 1 | 1 |
-| `scripts/verify.mjs` | 6 | 3 |
-| `src-tauri/src/main.rs` | 128 | 13 |
-| `src/companion/CompanionApp.vue` | 2 | 1 |
-| `src/constants/messages.ts` | 12 | 2 |
-| `src/types/pet.d.ts` | 1 | 1 |
+
