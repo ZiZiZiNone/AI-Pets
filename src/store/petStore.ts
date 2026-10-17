@@ -10,6 +10,7 @@ import type {
   HostSettings,
   LipSyncFrame,
   LlmBridgeConfig,
+  MenuInteractionDef,
   MenuItemSchema,
   PetActionConfig,
   PetManifest,
@@ -72,6 +73,10 @@ import {
 import { useCareStore } from './careStore';
 import type { AudioPrefs, CarePresenter } from './carePresenter';
 import { resolvePetTheme, themeToCssVars } from './themes';
+import {
+  collectMenuInteractionWarnings,
+  resolveMenuDefaults,
+} from '@/utils/menuInteraction';
 
 type WindowRole = 'main' | 'companion';
 
@@ -115,6 +120,12 @@ export const usePetStore = defineStore('petStore', () => {
   const availablePets = ref<PetManifest[]>([structuredClone(FALLBACK_PET_MANIFEST)]);
   const currentPet = ref<PetManifest | null>(structuredClone(FALLBACK_PET_MANIFEST));
   const globalMenus = ref<MenuItemSchema[]>([]);
+  /**
+   * Menu feel declared by `config/global_menu.yaml`, used by every pet that does not
+   * declare its own. Kept beside the menus rather than folded into them because it applies
+   * to the merged tree, not to the items that happened to come from that file.
+   */
+  const globalMenuInteraction = ref<MenuInteractionDef>({});
   const externalMenusByApp = ref<Record<string, MenuItemSchema[]>>({});
 
   const radialMenuOpen = ref(false);
@@ -188,6 +199,29 @@ export const usePetStore = defineStore('petStore', () => {
     ...globalMenus.value,
     ...Object.values(externalMenusByApp.value).flat(),
   ]);
+
+  /**
+   * Menu feel for the active pet: its own `menu_interaction`, else
+   * `config/global_menu.yaml`'s, else the built-in. Individual items may still override it.
+   */
+  const menuInteraction = computed<Required<MenuInteractionDef>>(() =>
+    resolveMenuDefaults(currentPet.value?.menu_interaction, globalMenuInteraction.value)
+  );
+
+  /**
+   * Configurations whose two gestures collide, so the menu opens its submenu where the
+   * author expected an action.
+   *
+   * Computed here rather than in the renderer so it covers the merged tree — a pet item, a
+   * global item and an externally registered one can each be the mistake.
+   */
+  const menuInteractionWarnings = computed<string[]>(() =>
+    collectMenuInteractionWarnings(
+      mergedMenuTree.value,
+      currentPet.value ?? undefined,
+      globalMenuInteraction.value
+    )
+  );
 
   const effectiveTargetFps = computed(() => {
     if (fpsOverride.value === '60') return 60;
@@ -526,7 +560,9 @@ export const usePetStore = defineStore('petStore', () => {
 
       if (bundle.settings_yaml) settings.value = parseHostSettingsYaml(bundle.settings_yaml);
       if (bundle.global_menu_yaml) {
-        globalMenus.value = parseGlobalMenuYaml(bundle.global_menu_yaml).menus;
+        const globalMenu = parseGlobalMenuYaml(bundle.global_menu_yaml);
+        globalMenus.value = globalMenu.menus;
+        globalMenuInteraction.value = globalMenu.interaction ?? {};
       }
       if (Array.isArray(bundle.pets) && bundle.pets.length > 0) {
         availablePets.value = bundle.pets.map((entry) => ({
@@ -538,6 +574,7 @@ export const usePetStore = defineStore('petStore', () => {
       const fallback = await fetchWebFallbackBundle();
       settings.value = fallback.settings;
       globalMenus.value = fallback.globalMenus;
+      globalMenuInteraction.value = fallback.globalMenuInteraction;
       availablePets.value = fallback.pets;
     }
 
@@ -828,6 +865,9 @@ export const usePetStore = defineStore('petStore', () => {
     xpProgressPercent,
     formattedPomodoroTime,
     mergedMenuTree,
+    menuInteraction,
+    menuInteractionWarnings,
+    globalMenuInteraction,
     effectiveTargetFps,
 
     getAudioPrefs,

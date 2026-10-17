@@ -4,12 +4,14 @@ import type {
   GlobalMenuConfig,
   HostSettings,
   LocalEngineConfig,
+  MenuInteractionDef,
   MenuItemSchema,
   PetManifest,
   PetVoiceDef,
   VoiceProviderId,
   VoiceSettings,
 } from '@/types/pet';
+import { normalizeMenuInteraction } from '@/utils/menuInteraction';
 
 const BUILTIN_PET_IDS = [
   'aether_mecha_core',
@@ -277,6 +279,7 @@ export function parsePetManifestYaml(rawText: string, fallbackId = 'aether_mecha
       description: typeof raw.description === 'string' ? raw.description : '',
       persona: parsePetPersonaYaml(raw.persona),
       voice: normalizePetVoiceDef(raw.voice),
+      menu_interaction: normalizeMenuInteraction(raw.menu_interaction),
       model: {
         entry: typeof rawModel.entry === 'string' ? rawModel.entry : 'idle.svg',
         scale:
@@ -486,19 +489,22 @@ export function serializeHostSettingsYaml(settings: HostSettings): string {
 export function parseGlobalMenuYaml(rawText: string): GlobalMenuConfig {
   try {
     const raw = (yaml.load(rawText) || {}) as Partial<GlobalMenuConfig>;
-    return { menus: Array.isArray(raw.menus) ? raw.menus : [] };
+    return {
+      menus: Array.isArray(raw.menus) ? raw.menus : [],
+      interaction: normalizeMenuInteraction(raw.interaction),
+    };
   } catch {
     return { menus: [] };
   }
 }
-
 export async function fetchWebFallbackBundle(): Promise<{
   settings: HostSettings;
   globalMenus: MenuItemSchema[];
+  globalMenuInteraction: MenuInteractionDef;
   pets: PetManifest[];
 }> {
   let settings = structuredClone(DEFAULT_HOST_SETTINGS);
-  let globalMenus: MenuItemSchema[] = [];
+  let globalMenu: GlobalMenuConfig = { menus: [] };
 
   try {
     const [settingsRes, menuRes] = await Promise.all([
@@ -506,7 +512,7 @@ export async function fetchWebFallbackBundle(): Promise<{
       fetch('/config/global_menu.yaml'),
     ]);
     if (settingsRes.ok) settings = parseHostSettingsYaml(await settingsRes.text());
-    if (menuRes.ok) globalMenus = parseGlobalMenuYaml(await menuRes.text()).menus;
+    if (menuRes.ok) globalMenu = parseGlobalMenuYaml(await menuRes.text());
   } catch {
     // Use defaults
   }
@@ -522,5 +528,10 @@ export async function fetchWebFallbackBundle(): Promise<{
   }
   if (pets.length === 0) pets.push(structuredClone(FALLBACK_PET_MANIFEST));
 
-  return { settings, globalMenus, pets };
+  return {
+    settings,
+    globalMenus: globalMenu.menus,
+    globalMenuInteraction: globalMenu.interaction ?? {},
+    pets,
+  };
 }

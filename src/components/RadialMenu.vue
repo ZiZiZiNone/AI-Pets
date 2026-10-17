@@ -81,7 +81,14 @@
             external: !!item.app_id,
           }"
           :style="getNodeTransformStyle(idx)"
-          @click.stop="handlePrimaryClick(item)"
+          @click.stop="handleNodeGesture(item, 'click')"
+          @dblclick.stop="handleNodeGesture(item, 'double_click')"
+          @pointerdown="startPress(item)"
+          @pointerup="cancelPress()"
+          @pointerleave="cancelPress()"
+          @pointercancel="cancelPress()"
+          @mouseenter="startHoverIntent(item)"
+          @mouseleave="cancelHoverIntent()"
         >
           <span class="wing-index">0{{ idx + 1 }}</span>
           <span class="wing-label">{{ item.label }}</span>
@@ -115,7 +122,15 @@
               :key="sub.id"
               class="subdeck-blade interactive-ui"
               :class="{ badged: !!sub.badge }"
-              @click.stop="handleSubItemClick(sub)"            >
+              @click.stop="handleNodeGesture(sub, 'click')"
+              @dblclick.stop="handleNodeGesture(sub, 'double_click')"
+              @pointerdown="startPress(sub)"
+              @pointerup="cancelPress()"
+              @pointerleave="cancelPress()"
+              @pointercancel="cancelPress()"
+              @mouseenter="startHoverIntent(sub)"
+              @mouseleave="cancelHoverIntent()"
+            >
               <span class="blade-num">#{{ sIdx + 1 }}</span>
               <span class="blade-text">{{ sub.label }}</span>
               <span v-if="sub.badge" class="blade-badge">{{ sub.badge }}</span>
@@ -138,7 +153,8 @@ import {
   STAGE_HEIGHT_PX,
   STAGE_WIDTH_PX,
 } from '@/constants/timing';
-import type { MenuItemSchema } from '@/types/pet';
+import type { MenuGesture, MenuInteractionDef, MenuItemSchema } from '@/types/pet';
+import { planMenuGesture, resolveMenuInteraction } from '@/utils/menuInteraction';
 
 const petStore = usePetStore();
 const activePrimaryId = ref<string | null>(null);
@@ -185,30 +201,110 @@ function getNodeTransformStyle(index: number): Record<string, string> {
   };
 }
 
-async function handlePrimaryClick(item: MenuItemSchema): Promise<void> {
+async function handleNodeGesture(item: MenuItemSchema, gesture: MenuGesture): Promise<void> {
   petStore.markUserActivity();
-  if (item.children && item.children.length > 0) {
-    activePrimaryId.value = activePrimaryId.value === item.id ? null : item.id;
+  if (gesture === 'click' && suppressNextClick) {
+    // The pointer-up that ends a long press also produces a click. Acting on it would make
+    // one press do the item's long-press job *and* its click job, which the author asked
+    // for as two separate things.
+    suppressNextClick = false;
     return;
   }
+  const interaction = interactionFor(item);
+  const hasChildren = Array.isArray(item.children) && item.children.length > 0;
 
-  if (item.action) {
-    await petStore.dispatchPetAction(item.action);
-    closeMenu();
+  switch (planMenuGesture(hasChildren, interaction, gesture)) {
+    case 'expand':
+      activePrimaryId.value = activePrimaryId.value === item.id ? null : item.id;
+      return;
+    case 'run_action':
+      if (!item.action) return;
+      await petStore.dispatchPetAction(item.action);
+      closeMenu();
+      return;
+    case 'ignore':
+      // A gesture this item is not bound to does nothing at all. Falling back to "open the
+      // submenu" is what made a single click the only gesture anything could respond to.
+      return;
   }
 }
 
-async function handleSubItemClick(sub: MenuItemSchema): Promise<void> {
-  petStore.markUserActivity();
-  if (sub.action) {
-    await petStore.dispatchPetAction(sub.action);
-    closeMenu();
+/**
+ * Gestures that need a duration are driven from here rather than from the template.
+ *
+ * Both timers are keyed to the item they started on, so moving the pointer off cancels the
+ * pending gesture instead of letting it fire on whatever the pointer reached next.
+ */
+let pressTimer: number | null = null;
+let hoverTimer: number | null = null;
+let suppressNextClick = false;
+
+function interactionFor(item: MenuItemSchema): Required<MenuInteractionDef> {
+  return resolveMenuInteraction(
+    item,
+    petStore.currentPet?.menu_interaction,
+    petStore.globalMenuInteraction
+  );
+}
+
+function startPress(item: MenuItemSchema): void {
+  cancelPress();
+  // Clear it here rather than in `cancelPress`: pointer-up runs before the click it
+  // produces, so clearing on pointer-up would drop the suppression the long press just set.
+  // A new press cannot start before the previous press's click has been delivered.
+  suppressNextClick = false;
+  const { long_press_ms: delay } = interactionFor(item);
+  pressTimer = window.setTimeout(() => {
+    pressTimer = null;
+    suppressNextClick = true;
+    void handleNodeGesture(item, 'long_press');
+  }, delay);
+}
+
+function cancelPress(): void {
+  if (pressTimer !== null) {
+    window.clearTimeout(pressTimer);
+    pressTimer = null;
+  }
+}
+
+function startHoverIntent(item: MenuItemSchema): void {
+  cancelHoverIntent();
+  const { hover_intent_ms: delay } = interactionFor(item);
+  hoverTimer = window.setTimeout(() => {
+    hoverTimer = null;
+    void handleNodeGesture(item, 'hover');
+  }, delay);
+}
+
+function cancelHoverIntent(): void {
+  if (hoverTimer !== null) {
+    window.clearTimeout(hoverTimer);
+    hoverTimer = null;
   }
 }
 
 function closeMenu(): void {
+  cancelPress();
+  cancelHoverIntent();
   activePrimaryId.value = null;
   petStore.radialMenuOpen = false;
+}
+
+/**
+ * Report a menu whose two gestures collide, once per item.
+ *
+ * The mistake is invisible in the interface — the item opens its submenu and its action
+ * never runs — so a console line is the only place the author can find out.
+ */
+const warnedInteractionIds = new Set<string>();
+
+function reportInteractionWarnings(): void {
+  for (const warning of petStore.menuInteractionWarnings) {
+    if (warnedInteractionIds.has(warning)) continue;
+    warnedInteractionIds.add(warning);
+    console.warn(`[menu_interaction] ${warning}`);
+  }
 }
 
 watch(
@@ -216,7 +312,14 @@ watch(
   (isOpen) => {
     if (!isOpen) {
       activePrimaryId.value = null;
-    } else if (primaryItems.value.length > 0 && !activePrimaryId.value) {
+      return;
+    }
+    reportInteractionWarnings();
+    if (
+      petStore.menuInteraction.auto_expand_first &&
+      primaryItems.value.length > 0 &&
+      !activePrimaryId.value
+    ) {
       const firstWithChildren = primaryItems.value.find(
         (m) => m.children && m.children.length > 0
       );

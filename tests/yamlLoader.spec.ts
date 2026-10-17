@@ -10,6 +10,7 @@ import {
 } from '@/utils/yamlLoader';
 import { matchDeclaredHitArea } from '@/adapters/IPetAdapter';
 import { PET_THEMES, resolvePetTheme, themeToCssVars } from '@/store/themes';
+import { DEFAULT_MENU_INTERACTION } from '@/utils/menuInteraction';
 
 describe('parsePetManifestYaml', () => {
   it('parses a well formed manifest', () => {
@@ -110,9 +111,53 @@ describe('parseGlobalMenuYaml', () => {
     expect(config.menus[0].id).toBe('a');
   });
 
+  it('reads the menu interaction defaults alongside the tree', () => {
+    const config = parseGlobalMenuYaml(
+      ['interaction:', '  expand: hover', '  hover_intent_ms: 300', 'menus: []'].join('\n')
+    );
+    expect(config.interaction).toMatchObject({ expand: 'hover', hover_intent_ms: 300 });
+  });
+
   it('yields an empty tree for malformed or missing menus', () => {
     expect(parseGlobalMenuYaml('menus: 5').menus).toEqual([]);
     expect(parseGlobalMenuYaml('::: bad :::').menus).toEqual([]);
+  });
+});
+
+describe('menu interaction in pet.yaml', () => {
+  it('reads the interaction block from a manifest', () => {
+    // The end-to-end path that matters: a pet folder declares its menu feel and the host
+    // reads it, with no code change and no second configuration file.
+    const manifest = parsePetManifestYaml(
+      [
+        'id: probe',
+        'menu_interaction:',
+        '  trigger: double_click',
+        '  expand: hover',
+        '  hover_intent_ms: 250',
+        '  long_press_ms: 700',
+        '  auto_expand_first: false',
+      ].join('\n')
+    );
+    expect(manifest.menu_interaction).toMatchObject({
+      trigger: 'double_click',
+      expand: 'hover',
+      hover_intent_ms: 250,
+      long_press_ms: 700,
+      auto_expand_first: false,
+    });
+  });
+
+  it('fills the block with working defaults when the manifest omits it', () => {
+    const manifest = parsePetManifestYaml('id: probe\n');
+    expect(manifest.menu_interaction).toEqual(DEFAULT_MENU_INTERACTION);
+  });
+
+  it('does not let a bad gesture reach the renderer', () => {
+    const manifest = parsePetManifestYaml(
+      ['id: probe', 'menu_interaction:', '  trigger: quadruple_click'].join('\n')
+    );
+    expect(manifest.menu_interaction?.trigger).toBe('click');
   });
 });
 

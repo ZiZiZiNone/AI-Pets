@@ -68,6 +68,38 @@ interface DropHandlerDef {
   action?: PetActionConfig;
 }
 
+/** Pointer gesture that can be bound to a menu item. */
+export type MenuGesture = 'click' | 'double_click' | 'long_press' | 'hover';
+
+/**
+ * Which gesture does what on one menu item.
+ *
+ * The two jobs a menu item has — running its action and opening its children — were both
+ * hardwired to a single click, so the only way to get a different feel was to edit the
+ * renderer. They are separate fields now, which is what lets one pet expand on hover and
+ * another ask for a double click, from `pet.yaml` alone.
+ *
+ * `hover` is the one to be careful with: see `hover_intent_ms`.
+ */
+export interface MenuInteractionDef {
+  /** Gesture that runs the item's `action`. */
+  trigger?: MenuGesture;
+  /** Gesture that opens the item's `children`. Ignored by an item that has none. */
+  expand?: MenuGesture;
+  /** How long a press must be held for `long_press` to count. */
+  long_press_ms?: number;
+  /**
+   * How long the pointer must rest on an item before `hover` counts.
+   *
+   * A bare hover would fire while the pointer is only passing over an item on its way to
+   * somewhere else, which for a menu is the same as a mis-click. The delay is what makes
+   * "hover to expand" usable rather than twitchy.
+   */
+  hover_intent_ms?: number;
+  /** Open the first item that has children when the menu appears. Default `true`. */
+  auto_expand_first?: boolean;
+}
+
 export interface MenuItemSchema {
   id: string;
   label: string;
@@ -76,6 +108,8 @@ export interface MenuItemSchema {
   app_id?: string;
   action?: PetActionConfig;
   children?: MenuItemSchema[];
+  /** Overrides the pet-level `menu_interaction` for this item alone. */
+  interaction?: MenuInteractionDef;
 }
 
 /**
@@ -105,6 +139,11 @@ export interface PetManifest {
   persona?: PetPersonaDef;
   /** Optional voice override; anything left out is inherited from `settings.yaml`. */
   voice?: PetVoiceDef;
+  /**
+   * Menu feel for this pet's whole tree: which gesture runs an action, which opens a
+   * submenu. Individual items may override it.
+   */
+  menu_interaction?: MenuInteractionDef;
   basePath?: string;
   model: {
     entry: string;
@@ -505,6 +544,8 @@ export interface HostSettings {
 
 export interface GlobalMenuConfig {
   menus: MenuItemSchema[];
+  /** Fallback menu feel for every pet; a pet's own `menu_interaction` wins over it. */
+  interaction?: MenuInteractionDef;
 }
 
 export interface PetStatsState {
