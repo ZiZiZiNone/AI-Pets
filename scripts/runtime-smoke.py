@@ -147,6 +147,116 @@ HOOK_SELF_TEST = "runtime-smoke-hook-self-test"
 
 READ_CAPTURE_JS = "JSON.stringify(window.__warnCapture)"
 
+BUBBLE_TEXT_JS = (
+    "(document.querySelector('.holo-speech-visor') || {}).textContent || ''"
+)
+
+# One submenu blade, driven three ways: a plain click, a press held past `long_press_ms`
+# whose release also produces a click, and (elsewhere) nothing. `mode` is substituted below.
+BLADE_JS = """
+(function () {
+  var blades = document.querySelectorAll('.subdeck-blade');
+  if (!blades.length) return 'no-blade';
+  var el = blades[0];
+  var mode = '__MODE__';
+  if (mode === 'click') {
+    el.click();
+  } else if (mode === 'press') {
+    el.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 1 }));
+  } else if (mode === 'release') {
+    el.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 1 }));
+    el.click();
+  }
+  return mode;
+})()
+"""
+
+# Reopens the menu and re-expands the first branch. Running an item closes the menu entirely,
+# so this handles both states: no menu at all, and a menu that is open but collapsed.
+ENSURE_BLADES_JS = """
+(function () {
+  if (document.querySelectorAll('.subdeck-blade').length) return 'blades-present';
+  var nodes = document.querySelectorAll('.tactical-wing-node');
+  if (!nodes.length) {
+    var button = [...document.querySelectorAll('button')].find(function (x) {
+      return x.textContent.trim() === '菜单';
+    });
+    if (!button) return 'no-menu-button';
+    button.click();
+    return 'reopened';
+  }
+  nodes[0].click();
+  return 'expanded';
+})()
+"""
+
+
+def ensure_blades(session):
+    """Get a submenu blade into the DOM, or explain why that was not possible."""
+    for _ in range(8):
+        if session.evaluate("document.querySelectorAll('.subdeck-blade').length"):
+            return True
+        step = session.evaluate(ENSURE_BLADES_JS)
+        if step == 'no-menu-button':
+            return False
+        time.sleep(0.5)
+    return bool(session.evaluate("document.querySelectorAll('.subdeck-blade').length"))
+
+
+def read_bubble(session):
+    return (session.evaluate(BUBBLE_TEXT_JS) or "").strip()
+
+
+def wait_for_bubble(session, seconds):
+    """Text of the visor once it holds something, or '' if nothing was said in time."""
+    deadline = time.time() + seconds
+    while time.time() < deadline:
+        text = read_bubble(session)
+        if text:
+            return text
+        time.sleep(0.2)
+    return ""
+
+
+def slow_press_round_trip(session):
+    """A press held past `long_press_ms` must still act when nothing is bound to long_press.
+
+    This is a judgement, and it is written as an A/B against the same item: the plain click
+    calibrates what "did something" looks like for whatever menu is installed (an action that
+    says nothing at all skips the check instead of failing it), and the slow press must produce
+    the same kind of result. The defect this replaces held the shipped menu completely inert
+    for any press of about half a second.
+    """
+    if not ensure_blades(session):
+        print("  no submenu item to drive; skipped")
+        return True
+
+    print("  " + str(session.evaluate(BLADE_JS.replace("__MODE__", "click"))))
+    baseline = wait_for_bubble(session, 2.5)
+    if not baseline:
+        print("  the item's action says nothing; calibration impossible, skipped")
+        return True
+    print(f"  plain click said: {baseline[:48]}")
+    deadline = time.time() + 15
+    while time.time() < deadline and read_bubble(session):
+        time.sleep(0.4)
+
+    if not ensure_blades(session):
+        print("  the menu could not be reopened; second half skipped")
+        return True
+    pressed = session.evaluate(BLADE_JS.replace("__MODE__", "press"))
+    if pressed != "press":
+        print(f"  pressing failed ({pressed}); second half skipped")
+        return True
+    time.sleep(0.65)
+    session.evaluate(BLADE_JS.replace("__MODE__", "release"))
+    slow = wait_for_bubble(session, 2.5)
+    if not slow:
+        print("  REGRESSION: a press held past long_press_ms did nothing at all")
+        return False
+    print(f"  slow press said: {slow[:48]}")
+    return True
+
 
 def http_json(url, timeout=2.0):
     with urllib.request.urlopen(url, timeout=timeout) as response:
@@ -406,30 +516,33 @@ def main():
             session.connect()
             try:
                 print("capabilities:", session.evaluate(CAPABILITIES_JS))
-                if args.read_only:
-                    outcome = "skipped (--read-only)"
-                else:
-                    outcome = session.evaluate(CLICK_JS)
-                    time.sleep(0.6)
-                print("stage chat bar:", outcome)
+                # Only the main stage carries the dock, the chat bar and the radial menu.
+                is_stage = (target.get("url") or "").rstrip("/") == "http://tauri.localhost"
+                if args.read_only or not is_stage:
+                    continue
+                print("stage chat bar:", session.evaluate(CLICK_JS))
+                time.sleep(0.6)
                 print("stage chat bar state:", session.evaluate(CHAT_BAR_JS))
 
-                if not args.read_only and "tauri.localhost" in (target.get("url") or ""):
-                    print("stage console hook:", session.evaluate(CONSOLE_HOOK_JS))
-                    session.evaluate(f"console.warn('{HOOK_SELF_TEST}')")
-                    print("open radial menu:", session.evaluate(OPEN_MENU_JS))
-                    time.sleep(1.2)
-                    print("radial menu:", session.evaluate(MENU_JS))
-                    captured = json.loads(session.evaluate(READ_CAPTURE_JS) or "[]")
-                    listening = any(HOOK_SELF_TEST in line for line in captured)
-                    print(f"console capture alive: {listening} · captured {len(captured)} line(s)")
-                    for line in captured:
-                        print("  " + line)
-                    if not listening:
-                        # Without this the empty list above would read as "the app logged
-                        # nothing", which is the one conclusion this setup cannot support.
-                        print("  CAPTURE BROKEN: the hook's own line never arrived")
-                        status = 1
+                print("stage console hook:", session.evaluate(CONSOLE_HOOK_JS))
+                session.evaluate(f"console.warn('{HOOK_SELF_TEST}')")
+                print("open radial menu:", session.evaluate(OPEN_MENU_JS))
+                time.sleep(1.2)
+                print("radial menu:", session.evaluate(MENU_JS))
+                captured = json.loads(session.evaluate(READ_CAPTURE_JS) or "[]")
+                listening = any(HOOK_SELF_TEST in line for line in captured)
+                print(f"console capture alive: {listening} · captured {len(captured)} line(s)")
+                for line in captured:
+                    print("  " + line)
+                if not listening:
+                    # Without this the empty list above would read as "the app logged
+                    # nothing", which is the one conclusion this setup cannot support.
+                    print("  CAPTURE BROKEN: the hook's own line never arrived")
+                    status = 1
+
+                print("gesture round trip (click vs 650ms press):")
+                if not slow_press_round_trip(session):
+                    status = 1
             finally:
                 session.close()
         if not args.no_bus:
