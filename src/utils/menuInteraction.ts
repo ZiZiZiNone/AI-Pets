@@ -148,6 +148,24 @@ export function planMenuGesture(
 }
 
 /**
+ * Whether the long press that just fired consumed the press, so the click the browser
+ * produces on release has to be ignored.
+ *
+ * The suppression only makes sense when `long_press` is bound to something. With the shipped
+ * defaults (`trigger` and `expand` both `click`) nothing is bound to it, so the long press
+ * does nothing — and swallowing the release's click as well left a press that was merely a
+ * little slow doing nothing at all: not the action, not the submenu, nothing. Measured in the
+ * built application before this was split out, on the shipped menu, with a plain click on the
+ * same item as the control.
+ */
+export function longPressConsumesPress(
+  hasChildren: boolean,
+  interaction: Required<MenuInteractionDef>
+): boolean {
+  return planMenuGesture(hasChildren, interaction, 'long_press') !== 'ignore';
+}
+
+/**
  * A configuration that cannot do what it looks like it does, in words fit for a log.
  *
  * The overlap is the whole trap: `trigger` and `expand` on the same gesture means the item

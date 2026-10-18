@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_MENU_INTERACTION,
   collectMenuInteractionWarnings,
+  longPressConsumesPress,
   normalizeMenuInteraction,
   planMenuGesture,
   resolveMenuDefaults,
@@ -109,6 +110,25 @@ describe('menu interaction configuration', () => {
     const interaction = normalizeMenuInteraction({ expand: 'hover', trigger: 'click' });
     expect(planMenuGesture(false, interaction, 'hover')).toBe('ignore');
     expect(planMenuGesture(false, interaction, 'click')).toBe('run_action');
+  });
+
+  it('only lets a long press eat the release click when long_press does something', () => {
+    // The shipped defaults bind `long_press` to nothing. Suppressing the click anyway turned
+    // every slightly slow click into a no-op, measured in the built application: click on the
+    // item acted, press 650ms then release did nothing at all, click on it acted again.
+    const shipped = normalizeMenuInteraction({});
+    expect(longPressConsumesPress(false, shipped)).toBe(false);
+    expect(longPressConsumesPress(true, shipped)).toBe(false);
+
+    expect(longPressConsumesPress(true, normalizeMenuInteraction({ expand: 'long_press' }))).toBe(true);
+    expect(longPressConsumesPress(false, normalizeMenuInteraction({ trigger: 'long_press' }))).toBe(true);
+    // A parent whose long press runs the action still must not let the release click expand.
+    expect(
+      longPressConsumesPress(
+        true,
+        normalizeMenuInteraction({ trigger: 'long_press', expand: 'click' })
+      )
+    ).toBe(true);
   });
 
   it('warns when an item cannot both expand and run its action', () => {

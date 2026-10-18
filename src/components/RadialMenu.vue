@@ -154,7 +154,7 @@ import {
   STAGE_WIDTH_PX,
 } from '@/constants/timing';
 import type { MenuGesture, MenuInteractionDef, MenuItemSchema } from '@/types/pet';
-import { planMenuGesture, resolveMenuInteraction } from '@/utils/menuInteraction';
+import { longPressConsumesPress, planMenuGesture, resolveMenuInteraction } from '@/utils/menuInteraction';
 
 const petStore = usePetStore();
 const activePrimaryId = ref<string | null>(null);
@@ -253,12 +253,16 @@ function startPress(item: MenuItemSchema): void {
   // produces, so clearing on pointer-up would drop the suppression the long press just set.
   // A new press cannot start before the previous press's click has been delivered.
   suppressNextClick = false;
-  const { long_press_ms: delay } = interactionFor(item);
+  const interaction = interactionFor(item);
   pressTimer = window.setTimeout(() => {
     pressTimer = null;
-    suppressNextClick = true;
+    const hasChildren = Array.isArray(item.children) && item.children.length > 0;
+    // Only a long press that actually did something may eat the release's click. Suppressing
+    // it unconditionally made every slightly slow click a no-op (the shipped defaults bind
+    // `long_press` to nothing), which is invisible until someone presses a little too long.
+    suppressNextClick = longPressConsumesPress(hasChildren, interaction);
     void handleNodeGesture(item, 'long_press');
-  }, delay);
+  }, interaction.long_press_ms);
 }
 
 function cancelPress(): void {
