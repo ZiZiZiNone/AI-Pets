@@ -1,7 +1,7 @@
 {
   "name": "ai-pets",
   "private": true,
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "AI-Pets — multi-format (2D/Live2D/Spine/VRM) micro-kernel desktop pet host built with Tauri v2, Vue 3, PixiJS, and Three.js",
   "type": "module",
   "engines": {

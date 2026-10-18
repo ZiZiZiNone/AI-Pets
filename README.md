@@ -231,8 +231,8 @@ cargo build --release --features custom-protocol
 
 ```text
 src-tauri/target/release/bundle/
-├── msi/AI-Pets_2.0.0_x64_en-US.msi
-└── nsis/AI-Pets_2.0.0_x64-setup.exe
+├── msi/AI-Pets_2.0.1_x64_en-US.msi
+└── nsis/AI-Pets_2.0.1_x64-setup.exe
 ```
 
 首次运行会由 Tauri 自动下载 WiX 与 NSIS 工具链（约 45 MB，缓存在
