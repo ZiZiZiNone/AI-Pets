@@ -98,6 +98,55 @@ CLICK_JS = """
 })()
 """
 
+OPEN_MENU_JS = """
+(function () {
+  var node = document.querySelector('.tactical-wing-node');
+  if (node) return 'already-open';
+  var b = [...document.querySelectorAll('button')].find(function (x) {
+    return x.textContent.trim() === '菜单';
+  });
+  if (!b) return 'no-menu-button';
+  b.click();
+  return 'clicked';
+})()
+"""
+
+# The radial menu is where `menu_interaction` shows up: opening it reports its warnings and,
+# with the shipped `auto_expand_first: true`, the first branch opens its children by itself.
+MENU_JS = """
+JSON.stringify({
+  nodes: [...document.querySelectorAll('.tactical-wing-node')].map(function (n) {
+    return n.textContent.trim();
+  }),
+  submenu: [...document.querySelectorAll('.subdeck-blade')].map(function (n) {
+    return n.textContent.trim();
+  })
+})
+"""
+
+# Console output is collected *inside the page* rather than from the DevTools event stream:
+# on this WebView2 build `Runtime.consoleAPICalled` never arrives, which was proven by logging
+# a known string from the page and never seeing it. Collecting in-page also means the probe
+# can tell "the app said nothing" apart from "we were not listening", because the hook records
+# a line of its own before anything else runs.
+CONSOLE_HOOK_JS = """
+(function () {
+  window.__warnCapture = [];
+  ['warn', 'error'].forEach(function (level) {
+    var original = console[level];
+    console[level] = function () {
+      window.__warnCapture.push(level + ': ' + Array.prototype.join.call(arguments, ' '));
+      return original.apply(console, arguments);
+    };
+  });
+  return 'hooked';
+})()
+"""
+
+HOOK_SELF_TEST = "runtime-smoke-hook-self-test"
+
+READ_CAPTURE_JS = "JSON.stringify(window.__warnCapture)"
+
 
 def http_json(url, timeout=2.0):
     with urllib.request.urlopen(url, timeout=timeout) as response:
@@ -364,6 +413,23 @@ def main():
                     time.sleep(0.6)
                 print("stage chat bar:", outcome)
                 print("stage chat bar state:", session.evaluate(CHAT_BAR_JS))
+
+                if not args.read_only and "tauri.localhost" in (target.get("url") or ""):
+                    print("stage console hook:", session.evaluate(CONSOLE_HOOK_JS))
+                    session.evaluate(f"console.warn('{HOOK_SELF_TEST}')")
+                    print("open radial menu:", session.evaluate(OPEN_MENU_JS))
+                    time.sleep(1.2)
+                    print("radial menu:", session.evaluate(MENU_JS))
+                    captured = json.loads(session.evaluate(READ_CAPTURE_JS) or "[]")
+                    listening = any(HOOK_SELF_TEST in line for line in captured)
+                    print(f"console capture alive: {listening} · captured {len(captured)} line(s)")
+                    for line in captured:
+                        print("  " + line)
+                    if not listening:
+                        # Without this the empty list above would read as "the app logged
+                        # nothing", which is the one conclusion this setup cannot support.
+                        print("  CAPTURE BROKEN: the hook's own line never arrived")
+                        status = 1
             finally:
                 session.close()
         if not args.no_bus:
