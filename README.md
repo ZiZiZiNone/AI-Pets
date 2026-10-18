@@ -97,11 +97,14 @@ python scripts/runtime-smoke.py             # 启动已构建的二进制探测�
 
 `runtime-smoke.py` 是唯一会真正运行程序的检查：它带 `--remote-debugging-port` 启动
 `src-tauri/target/release/ai-pets.exe`，用 DevTools 协议问每个页面「你的环境里有哪些 API」、
-「识别入口现在显示什么」，再连上进程内的 WebSocket 总线做一次 `switch_pet` 往返，
-最后按进程树关掉它自己启动的宿主。能力与文案部分只如实报告；**总线往返是判定**：
-未安装的宠物 id 必须回 `status: error` 并点出那个 id（旧的假成功会回 `ok`），
-已安装的必须回 `status: ok`，不满足则退出码 1。它不接入 `npm run verify`，
-因为取证工具应当是只读的，而它会启动一个 GUI 进程。
+「识别入口现在显示什么」，从页面内部点开径向菜单并读回它自己的控制台日志，
+再连上进程内的 WebSocket 总线做一次 `switch_pet` 往返，最后按进程树关掉它自己启动的宿主。
+
+能力与文案部分只如实报告；**有两处是判定**，不满足则退出码 1：未安装的宠物 id 必须回
+`status: error` 并点出那个 id（旧的假成功会回 `ok`），已安装的必须回 `status: ok`；
+以及页面内的控制台钩子必须先收到它自己打的那一行——否则「一条日志都没有」会被
+误读成「应用什么都没说」。它不接入 `npm run verify`，因为取证工具应当是只读的，
+而它会启动一个 GUI 进程。
 
 ### 打包成安装包
 
