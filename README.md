@@ -63,6 +63,16 @@ cargo +stable-x86_64-pc-windows-gnu test --manifest-path src-tauri/Cargo.toml
 cargo +stable-x86_64-pc-windows-gnu build --release --features custom-protocol --manifest-path src-tauri/Cargo.toml
 ```
 
+`npm run verify` 内部调的是 `cargo`，**不带 `+工具链`**，所以走 GNU 路线时要用环境变量
+把它一起切过去，否则它会按 `rust-toolchain.toml` 解析出 `-msvc` 然后卡在链接上：
+
+```powershell
+$env:RUSTUP_TOOLCHAIN = 'stable-x86_64-pc-windows-gnu'
+$env:CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER = '<MinGW>\bin\gcc.exe'
+$env:PATH = '<MinGW>\bin;' + $env:PATH
+npm.cmd run verify
+```
+
 需要一份 MinGW-w64 的 `gcc` / `dlltool` / `ar` 在 `PATH` 上。两条都验证过的最小做法：
 
 - **便携 MSYS2**：解压一份 MSYS2 到任意盘，用 `pacman` 装 `mingw-w64-x86_64-gcc`，
