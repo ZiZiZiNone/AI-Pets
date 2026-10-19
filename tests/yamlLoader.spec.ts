@@ -66,6 +66,92 @@ model:
   });
 });
 
+describe('frame strips in pet.yaml', () => {
+  it('reads how many frames a clip holds and how fast to step through them', () => {
+    const manifest = parsePetManifestYaml(
+      [
+        'id: probe',
+        'model:',
+        '  entry: idle_strip.png',
+        '  animations:',
+        '    idle:',
+        '      file: idle_strip.png',
+        '      frames: 9',
+        '      fps: 12',
+        '      loop: true',
+      ].join('\n')
+    );
+    const clip = manifest.model.animations?.idle;
+    expect(clip?.file).toBe('idle_strip.png');
+    expect(clip?.frames).toBe(9);
+    expect(clip?.fps).toBe(12);
+  });
+
+  it('drops a frame count and a rate that could not be stepped through', () => {
+    // A clip without a usable frame count is read as one picture, and one picture of a
+    // strip is the whole strip squeezed into the sprite's box - so a number that makes
+    // no sense has to fall away rather than reach the renderer.
+    const manifest = parsePetManifestYaml(
+      [
+        'id: probe',
+        'model:',
+        '  animations:',
+        '    idle:',
+        '      file: idle.png',
+        '      frames: 0',
+        '      fps: -3',
+      ].join('\n')
+    );
+    const clip = manifest.model.animations?.idle;
+    expect(clip?.file).toBe('idle.png');
+    expect(clip?.frames).toBeUndefined();
+    expect(clip?.fps).toBeUndefined();
+  });
+
+  it('falls back to the host default when a clip names no file', () => {
+    // The clip is dropped and the host's own idle picture takes its place. What matters
+    // is that the frame count does not survive with it: a default clip that still said
+    // nine frames would point the renderer at a strip the default picture does not have.
+    const manifest = parsePetManifestYaml(
+      ['id: probe', 'model:', '  animations:', '    idle:', '      frames: 9'].join('\n')
+    );
+    const clip = manifest.model.animations?.idle;
+    expect(clip?.file).toBe('idle.svg');
+    expect(clip?.frames).toBeUndefined();
+  });
+
+  it('keeps every clip of a strip, so no motion shows the whole strip at once', () => {
+    // The strip is one file with many cells. A motion that points at the file without
+    // saying how many cells it holds draws all of them in one go, so the frames have to
+    // travel with every clip that names the strip.
+    const manifest = parsePetManifestYaml(
+      [
+        'id: probe',
+        'model:',
+        '  entry: idle_strip.png',
+        '  animations:',
+        '    idle:',
+        '      file: idle_strip.png',
+        '      frames: 9',
+        '      fps: 12',
+        '    happy:',
+        '      file: idle_strip.png',
+        '      frames: 9',
+        '      fps: 12',
+        '    sleep:',
+        '      file: idle_strip.png',
+        '      frames: 9',
+        '      fps: 12',
+      ].join('\n')
+    );
+    const clips = manifest.model.animations ?? {};
+    for (const name of ['idle', 'happy', 'sleep']) {
+      expect(clips[name]?.frames).toBe(9);
+      expect(clips[name]?.fps).toBe(12);
+    }
+  });
+});
+
 describe('serializePetManifestYaml', () => {
   it('drops the runtime-only basePath before writing', () => {
     const yaml = serializePetManifestYaml({
