@@ -89,35 +89,124 @@
 
     <div class="spatial-pod-card full-width">
       <div class="pod-meta-bar">
-        <span class="pod-code">PERSONA FLEET // 四大内置旗舰动态机体切换</span>
+        <span class="pod-code">
+          PERSONA FLEET // 机体编队 · {{ filteredPets.length }} / {{ petStore.availablePets.length }}
+        </span>
+        <span v-if="activeCluster" class="pomo-badge" @click="activeCluster = ''">
+          {{ activeCluster }} ✕
+        </span>
       </div>
-      <div class="persona-grid">
-        <div
-          v-for="pet in petStore.availablePets"
-          :key="pet.id"
-          class="persona-card"
-          :class="{ active: petStore.active_pet_id === pet.id }"
-          @click="petStore.switchPetById(pet.id)"
+
+      <input
+        v-model="query"
+        class="fleet-search"
+        type="search"
+        placeholder="搜索名字 / 别名 / 简介"
+        spellcheck="false"
+      />
+
+      <div class="fleet-cluster-row">
+        <button
+          class="fleet-cluster-chip"
+          :class="{ active: activeCluster === '' }"
+          @click="activeCluster = ''"
         >
-          <div class="persona-card-head">
-            <span class="persona-name">{{ pet.name }}</span>
-            <span class="persona-type">{{ pet.type.toUpperCase() }}</span>
+          全部 {{ petStore.availablePets.length }}
+        </button>
+        <button
+          v-for="cluster in clusters"
+          :key="cluster.name"
+          class="fleet-cluster-chip"
+          :class="{ active: activeCluster === cluster.name }"
+          @click="activeCluster = cluster.name"
+        >
+          {{ cluster.name }} {{ cluster.count }}
+        </button>
+      </div>
+
+      <div v-for="group in groups" :key="group.name" class="fleet-group">
+        <div class="fleet-group-head">
+          <span class="fleet-group-name">{{ group.name }}</span>
+          <span class="fleet-group-count">{{ group.pets.length }}</span>
+        </div>
+        <div class="persona-grid">
+          <div
+            v-for="pet in group.pets"
+            :key="pet.id"
+            class="persona-card"
+            :class="{ active: petStore.active_pet_id === pet.id }"
+            @click="petStore.switchPetById(pet.id)"
+          >
+            <div class="persona-card-head">
+              <span class="persona-name">{{ pet.name }}</span>
+              <span class="persona-type">{{ pet.alias || pet.type.toUpperCase() }}</span>
+            </div>
+            <p class="persona-desc">{{ pet.description }}</p>
           </div>
-          <p class="persona-desc">{{ pet.description }}</p>
         </div>
       </div>
+
+      <p v-if="!groups.length" class="fleet-empty">没有匹配的机体。</p>
     </div>
   </main>
 </template>
 
 <script setup lang="ts">
+import { computed, ref } from 'vue';
 import { usePetStore } from '@/store/petStore';
+import type { PetManifest } from '@/types/pet';
 
 const emit = defineEmits<{
   (e: 'log', line: string): void;
 }>();
 
 const petStore = usePetStore();
+
+/** The shelf a pet is filed under, or a neutral label for the ones that declare none. */
+const UNFILED = '未分组';
+
+const query = ref('');
+const activeCluster = ref('');
+
+const clusters = computed(() => {
+  const counts = new Map<string, number>();
+  for (const pet of petStore.availablePets) {
+    const key = pet.cluster?.trim() || UNFILED;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'zh'));
+});
+
+const filteredPets = computed(() => {
+  const needle = query.value.trim().toLowerCase();
+  return petStore.availablePets.filter((pet) => {
+    if (activeCluster.value && (pet.cluster?.trim() || UNFILED) !== activeCluster.value) {
+      return false;
+    }
+    if (!needle) return true;
+    return [pet.name, pet.alias ?? '', pet.description ?? '', pet.cluster ?? '']
+      .join(' ')
+      .toLowerCase()
+      .includes(needle);
+  });
+});
+
+/** Grouped in the same order as the chips, so the list and the filter agree. */
+const groups = computed(() => {
+  const order = new Map(clusters.value.map((cluster, index) => [cluster.name, index]));
+  const buckets = new Map<string, PetManifest[]>();
+  for (const pet of filteredPets.value) {
+    const key = pet.cluster?.trim() || UNFILED;
+    const bucket = buckets.get(key);
+    if (bucket) bucket.push(pet);
+    else buckets.set(key, [pet]);
+  }
+  return [...buckets.entries()]
+    .map(([name, pets]) => ({ name, pets }))
+    .sort((a, b) => (order.get(a.name) ?? 99) - (order.get(b.name) ?? 99));
+});
 
 const motionPreviews = [
   { id: 'happy', exp: 'smile', icon: '⚡', label: '脉冲跃迁' },
