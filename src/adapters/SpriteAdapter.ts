@@ -5,6 +5,7 @@ import {
   resolvePetAssetUrl,
 } from './IPetAdapter';
 import { resolvePetTheme } from '@/store/themes';
+import { frameIndexAt, frameSourceRect } from '@/utils/frameStrip';
 import { breathingScale, idleMotionFor, weightShift } from '@/utils/proceduralMotion';
 import {
   ALPHA_MASK_ALPHA_THRESHOLD,
@@ -13,7 +14,6 @@ import {
   BOUNCE_DAMPING,
   BOUNCE_MIN_IMPACT_SPEED,
   BOUNCE_SPEED_DIVISOR,
-  DEFAULT_CLIP_FPS,
   DEFAULT_GRAVITY_PX_S2,
   GRAVITY_MAX_PX_S2,
   GRAVITY_MIN_PX_S2,
@@ -431,15 +431,19 @@ export class SpriteAdapter implements IPetAdapter {
     if (this.img && this.img.complete && this.img.naturalWidth > 0) {
       if (this.clipFrames > 1) {
         // The file is a strip: one frame at a time, stepped by the clip's own rate.
-        const frameWidth = this.img.naturalWidth / this.clipFrames;
-        const rate = this.clipFps > 0 ? this.clipFps : DEFAULT_CLIP_FPS;
-        const index = Math.floor(this.motionElapsed * rate) % this.clipFrames;
+        const index = frameIndexAt(this.motionElapsed, this.clipFrames, this.clipFps);
+        const cell = frameSourceRect(
+          this.img.naturalWidth,
+          this.img.naturalHeight,
+          this.clipFrames,
+          index
+        );
         ctx.drawImage(
           this.img,
-          index * frameWidth,
-          0,
-          frameWidth,
-          this.img.naturalHeight,
+          cell.x,
+          cell.y,
+          cell.width,
+          cell.height,
           -drawW * 0.5,
           -drawH * 0.5,
           drawW,
