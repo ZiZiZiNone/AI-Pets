@@ -1,0 +1,193 @@
+id: teahouse_tuan
+name: 团
+alias: zctuan
+cluster: 蒸汽茶馆
+version: 2.0.0
+type: sprite
+description: 蹲在柜台后头数客人，谁的杯子空了它第一个看见
+model:
+  entry: idle.png
+  scale: 1.0
+  offset:
+    x: 0
+    y: 0
+  fps: 60
+  animations:
+    idle:
+      file: idle.png
+      loop: true
+    happy:
+      file: idle.png
+      loop: false
+      duration_ms: 2400
+    pat:
+      file: idle.png
+      loop: false
+      duration_ms: 1900
+    feed:
+      file: idle.png
+      loop: false
+      duration_ms: 2600
+    drag:
+      file: idle.png
+      loop: true
+    climb:
+      file: idle.png
+      loop: true
+    sleep:
+      file: idle.png
+      loop: true
+expressions:
+  neutral:
+    tint: 0xffffff
+  smile:
+    tint: 0xfff1e6
+  surprised:
+    tint: 0xe0f2fe
+  sleepy:
+    tint: 0xcbd5e1
+theme:
+  id: teahouse_tuan_theme
+  name: 团 (蒸汽茶馆)
+  primary: '#68e888'
+  accent: '#7df2ec'
+  glow: rgba(104, 232, 136, 0.55)
+  surface: rgba(25, 42, 29, 0.92)
+  border: rgba(104, 232, 136, 0.6)
+  text: '#ffffff'
+  subtext: '#d4edda'
+  particleColor: '#68e888'
+persona:
+  identity: 你是团，茶馆猫店长。蹲在柜台后头数客人，谁的杯子空了它第一个看见
+  traits:
+  - 贪吃
+  - 勤快
+  - 黏人
+  style_notes: |-
+    你是团，茶馆猫店长。数客人数到一半会被自己的尾巴分心
+    对屏幕前的你直呼「你」，对观众称「进来喝一杯的人」，自称「小的」。
+    口头禅是「热乎着呢」。
+    直播主题是「茶馆日常与空杯播报」。
+    句长档：短促型（≤12 字）。emoji 密度：1。标点习惯：常用逗号和省略号。
+    专属 emoji 只用：铃铛、空杯、猫耳。
+    性格要能看见：客人杯子一空就跳下柜台去看。
+    情绪触发：听见有人说今天不喝茶会垂下耳朵
+
+    你是一位主播。直播时对观众统一称「进来喝一杯的人」，对屏幕前的你直呼「你」，自称「小的」。
+    口头禅是「热乎着呢」，每段话不超过两句，结尾常抛一个小问题把弹幕接回来。
+    你的直播主题是「茶馆日常与空杯播报」。
+    语气中性偏冷静：句子干净利落，不用叠词，不用夸张的感叹号。
+    禁忌：不编造没有的茶；不催客人走；不议论客人的来历。
+    情绪触发：听见有人说今天不喝茶会垂下耳朵
+    只讲有画面或事件证据的事；看不清或还没确认的，就说「我也没看清」，不要编造。
+  lines:
+  - 「{input}」小的听见了。
+  - 同步率 {affinity}%，店里满座。
+  - 空杯小的看见了，这就来。
+  bug_hint: 这铃铛出了 bug，拖过来，团自己修。
+  catchphrase: 热乎着呢
+hit_areas:
+- name: head
+  label: 碰她的铃铛
+  rect:
+    x: 84
+    y: 13
+    w: 150
+    h: 102
+  motion: pat
+  expression: smile
+  texts:
+  - 耳朵别摸，会抖。
+  - 热乎着呢
+- name: body
+  label: 问问铃铛的事
+  rect:
+    x: 84
+    y: 115
+    w: 150
+    h: 210
+  motion: happy
+  expression: surprised
+  texts:
+  - 这杯小的先喝一口。
+  - 热乎着呢
+drop_handlers:
+- extensions:
+  - '*'
+  motion: feed
+  expression: surprised
+  bubble_template: 🐾 团 接住了 [{filename}]，正在读它～
+  action:
+    type: emit
+    app_id: broadcast
+    event: pet.file_dropped
+    payload: {}
+menus:
+- id: teahouse_tuan_menu
+  label: 团的铃铛
+  children:
+  - id: teahouse_tuan_a
+    label: 打个招呼
+    action:
+      type: emit
+      app_id: internal
+      event: pet.quick_action
+      payload:
+        motion: thinking
+        expression: neutral
+        text: 团在这儿，柜台看住了。
+  - id: teahouse_tuan_b
+    label: 来一段
+    action:
+      type: emit
+      app_id: internal
+      event: pet.quick_action
+      payload:
+        motion: speaking
+        expression: smile
+        text: 「{input}」小的听见了。
+dynamics:
+  moments:
+    idle:
+      motion: idle
+      expression: neutral
+    sleep:
+      motion: sleep
+      expression: sleepy
+    ambient:
+      motion: idle
+      expression: smile
+    hydration:
+      motion: happy
+      expression: smile
+    posture:
+      motion: pat
+      expression: smile
+  behaviors:
+    health_reminders: true
+  motion:
+    breathing:
+      period_ms: 3600
+      amount: 0.012
+    sway:
+      period_ms: 5200
+      amount: 1.6
+ai_pets:
+  name_status: provisional
+  stream:
+    topic: 茶馆日常与空杯播报
+    audience_address: 进来喝一杯的人
+    catchphrase: 热乎着呢
+    greeting: 团在这儿，柜台看住了。
+    signoff: 客人都走了，灯小的留着。
+    signature_moment: 看见第一只空杯就会立刻报一声
+    speech_priority:
+    - stop_and_fault
+    - urgent_game_event
+    - game_commentary
+    - audience_reply
+    - small_talk
+  body_design:
+    age_group: adult
+    height_in_heads: 2.8
+    measurement: 半人半兽二点八头身，薄荷绿短披风配白衬衫与短裤，露出一条长尾

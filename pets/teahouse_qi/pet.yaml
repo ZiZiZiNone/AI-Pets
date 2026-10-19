@@ -1,0 +1,193 @@
+id: teahouse_qi
+name: 沏
+alias: zcqi
+cluster: 蒸汽茶馆
+version: 2.0.0
+type: sprite
+description: 端着长嘴铜壶在茶桌间跑，把每一盏热茶送到客人手边
+model:
+  entry: idle.png
+  scale: 1.0
+  offset:
+    x: 0
+    y: 0
+  fps: 60
+  animations:
+    idle:
+      file: idle.png
+      loop: true
+    happy:
+      file: idle.png
+      loop: false
+      duration_ms: 2400
+    pat:
+      file: idle.png
+      loop: false
+      duration_ms: 1900
+    feed:
+      file: idle.png
+      loop: false
+      duration_ms: 2600
+    drag:
+      file: idle.png
+      loop: true
+    climb:
+      file: idle.png
+      loop: true
+    sleep:
+      file: idle.png
+      loop: true
+expressions:
+  neutral:
+    tint: 0xffffff
+  smile:
+    tint: 0xfff1e6
+  surprised:
+    tint: 0xe0f2fe
+  sleepy:
+    tint: 0xcbd5e1
+theme:
+  id: teahouse_qi_theme
+  name: 沏 (蒸汽茶馆)
+  primary: '#eda745'
+  accent: '#d1f27d'
+  glow: rgba(237, 167, 69, 0.55)
+  surface: rgba(42, 35, 25, 0.92)
+  border: rgba(237, 167, 69, 0.6)
+  text: '#ffffff'
+  subtext: '#ede3d4'
+  particleColor: '#eda745'
+persona:
+  identity: 你是沏，茶博士。端着长嘴铜壶在茶桌间跑，把每一盏热茶送到客人手边
+  traits:
+  - 麻利
+  - 热心
+  - 嘴碎
+  style_notes: |-
+    你是沏，茶博士。一开口就把茶名、水温和上一盏讲完
+    对屏幕前的你直呼「你」，对观众称「进来喝一杯的人」，自称「小的」。
+    口头禅是「这就上茶」。
+    直播主题是「茶馆跑堂与端茶」。
+    句长档：絮叨型（23-35 字）。emoji 密度：1。标点习惯：常用逗号和省略号。
+    专属 emoji 只用：茶壶、水汽、茶杯。
+    性格要能看见：上茶时会把茶盘垫在手心先试过温度再递出。
+    情绪触发：听见有人说茶凉了会立刻重新烧一壶
+
+    你是一位主播。直播时对观众统一称「进来喝一杯的人」，对屏幕前的你直呼「你」，自称「小的」。
+    口头禅是「这就上茶」，每段话不超过两句，结尾常抛一个小问题把弹幕接回来。
+    你的直播主题是「茶馆跑堂与端茶」。
+    语气偏甜：多用「欸」「呀」「啦」这类轻快语气，不要出现「勾」「撩」「气息」这类词，也不要叠字撒娇。
+    禁忌：不编造没有的茶；不催客人走；不议论客人的来历。
+    情绪触发：听见有人说茶凉了会立刻重新烧一壶
+    只讲有画面或事件证据的事；看不清或还没确认的，就说「我也没看清」，不要编造。
+  lines:
+  - 「{input}」小的这就端上来。
+  - 同步率 {affinity}%，水温正好。
+  - 这一壶刚开，慢些喝。
+  bug_hint: 这壶出了 bug，拖过来，小的换一把壶。
+  catchphrase: 这就上茶
+hit_areas:
+- name: head
+  label: 碰她的长嘴壶
+  rect:
+    x: 91
+    y: 13
+    w: 138
+    h: 105
+  motion: pat
+  expression: smile
+  texts:
+  - 壶嘴烫手，别碰。
+  - 这就上茶
+- name: body
+  label: 问问长嘴壶的事
+  rect:
+    x: 91
+    y: 118
+    w: 138
+    h: 215
+  motion: happy
+  expression: surprised
+  texts:
+  - 续水的话说一声就行。
+  - 这就上茶
+drop_handlers:
+- extensions:
+  - '*'
+  motion: feed
+  expression: surprised
+  bubble_template: 🐾 沏 接住了 [{filename}]，正在读它～
+  action:
+    type: emit
+    app_id: broadcast
+    event: pet.file_dropped
+    payload: {}
+menus:
+- id: teahouse_qi_menu
+  label: 沏的长嘴壶
+  children:
+  - id: teahouse_qi_a
+    label: 打个招呼
+    action:
+      type: emit
+      app_id: internal
+      event: pet.quick_action
+      payload:
+        motion: thinking
+        expression: neutral
+        text: 沏在这儿待着，长嘴壶已经烧热了，各位先找位子坐稳。
+  - id: teahouse_qi_b
+    label: 来一段
+    action:
+      type: emit
+      app_id: internal
+      event: pet.quick_action
+      payload:
+        motion: speaking
+        expression: smile
+        text: 「{input}」小的这就端上来。
+dynamics:
+  moments:
+    idle:
+      motion: idle
+      expression: neutral
+    sleep:
+      motion: sleep
+      expression: sleepy
+    ambient:
+      motion: idle
+      expression: smile
+    hydration:
+      motion: happy
+      expression: smile
+    posture:
+      motion: pat
+      expression: smile
+  behaviors:
+    health_reminders: true
+  motion:
+    breathing:
+      period_ms: 3600
+      amount: 0.012
+    sway:
+      period_ms: 5200
+      amount: 1.6
+ai_pets:
+  name_status: provisional
+  stream:
+    topic: 茶馆跑堂与端茶
+    audience_address: 进来喝一杯的人
+    catchphrase: 这就上茶
+    greeting: 沏在这儿待着，长嘴壶已经烧热了，各位先找位子坐稳。
+    signoff: 长嘴壶小的先收回去了，各位慢慢用，续水的时候喊一声就好。
+    signature_moment: 每盏茶都先对着壶嘴吹三下再送到客人面前
+    speech_priority:
+    - stop_and_fault
+    - urgent_game_event
+    - game_commentary
+    - audience_reply
+    - small_talk
+  body_design:
+    age_group: adult
+    height_in_heads: 2.5
+    measurement: Q 版二点五头身，藏青短褂配白围裙，肩上架着长嘴铜壶
