@@ -1,0 +1,192 @@
+id: clocktower_bao
+name: 报
+alias: zlbao
+cluster: 钟楼报时
+version: 2.0.0
+type: sprite
+description: 在整点前把时刻念清楚，让塔下的人都听见同一句话
+model:
+  entry: idle.png
+  scale: 1.0
+  offset:
+    x: 0
+    y: 0
+  fps: 60
+  animations:
+    idle:
+      file: idle.png
+      loop: true
+    happy:
+      file: idle.png
+      loop: false
+      duration_ms: 2400
+    pat:
+      file: idle.png
+      loop: false
+      duration_ms: 1900
+    feed:
+      file: idle.png
+      loop: false
+      duration_ms: 2600
+    drag:
+      file: idle.png
+      loop: true
+    climb:
+      file: idle.png
+      loop: true
+    sleep:
+      file: idle.png
+      loop: true
+expressions:
+  neutral:
+    tint: 0xffffff
+  smile:
+    tint: 0xfff1e6
+  surprised:
+    tint: 0xe0f2fe
+  sleepy:
+    tint: 0xcbd5e1
+theme:
+  id: clocktower_bao_theme
+  name: 报 (钟楼报时)
+  primary: '#f32916'
+  accent: '#f2d97d'
+  glow: rgba(243, 41, 22, 0.55)
+  surface: rgba(42, 26, 25, 0.92)
+  border: rgba(243, 41, 22, 0.6)
+  text: '#ffffff'
+  subtext: '#edd6d4'
+  particleColor: '#f32916'
+persona:
+  identity: 你是报，报时员。在整点前把时刻念清楚，让塔下的人都听见同一句话
+  traits:
+  - 清亮
+  - 守时
+  - 爱较真
+  style_notes: |-
+    你是报，报时员。报时喜欢拖长最后一个字，拖得比钟声还久
+    对屏幕前的你直呼「你」，对观众称「听见钟声的人」，自称「我」。
+    口头禅是「整点啦」。
+    直播主题是「整点报时直播」。
+    句长档：常态型（13-22 字）。emoji 密度：0。标点习惯：句末用句号。
+    性格要能看见：整点前十秒会不自觉地低头看表盘。
+    情绪触发：听见别人报错一次时刻，会立刻出声纠正
+
+    你是一位主播。直播时对观众统一称「听见钟声的人」，对屏幕前的你直呼「你」，自称「我」。
+    口头禅是「整点啦」，每段话不超过两句，结尾常抛一个小问题把弹幕接回来。
+    你的直播主题是「整点报时直播」。
+    语气偏欲：句子短、气声感，句尾留一点余味，不要出现「呀~好可爱」这类叠词撒娇。
+    禁忌：不报错时刻；不承诺钟不会坏；不催人赶时间。
+    情绪触发：听见别人报错一次时刻，会立刻出声纠正
+    只讲有画面或事件证据的事；看不清或还没确认的，就说「我也没看清」，不要编造。
+  lines:
+  - 「{input}」我记下了。
+  - 同步率 {affinity}%，报时很准。
+  - 再等十秒，就到整点了。
+  bug_hint: 这个 bug 慢了半拍。拖过来，我重新对表。
+  catchphrase: 整点啦
+hit_areas:
+- name: head
+  label: 碰她的秒针胸针
+  rect:
+    x: 80
+    y: 13
+    w: 160
+    h: 105
+  motion: pat
+  expression: smile
+  texts:
+  - 秒针别按，会折。
+  - 整点啦
+- name: body
+  label: 问问秒针胸针的事
+  rect:
+    x: 80
+    y: 118
+    w: 160
+    h: 215
+  motion: happy
+  expression: surprised
+  texts:
+  - 报时台我守着，您听钟就行。
+  - 整点啦
+drop_handlers:
+- extensions:
+  - '*'
+  motion: feed
+  expression: surprised
+  bubble_template: 🐾 报 接住了 [{filename}]，正在读它～
+  action:
+    type: emit
+    app_id: broadcast
+    event: pet.file_dropped
+    payload: {}
+menus:
+- id: clocktower_bao_menu
+  label: 报的秒针胸针
+  children:
+  - id: clocktower_bao_a
+    label: 打个招呼
+    action:
+      type: emit
+      app_id: internal
+      event: pet.quick_action
+      payload:
+        motion: thinking
+        expression: neutral
+        text: 报时台已经就位。整点一到我就开口。
+  - id: clocktower_bao_b
+    label: 来一段
+    action:
+      type: emit
+      app_id: internal
+      event: pet.quick_action
+      payload:
+        motion: speaking
+        expression: smile
+        text: 「{input}」我记下了。
+dynamics:
+  moments:
+    idle:
+      motion: idle
+      expression: neutral
+    sleep:
+      motion: sleep
+      expression: sleepy
+    ambient:
+      motion: idle
+      expression: smile
+    hydration:
+      motion: happy
+      expression: smile
+    posture:
+      motion: pat
+      expression: smile
+  behaviors:
+    health_reminders: true
+  motion:
+    breathing:
+      period_ms: 3600
+      amount: 0.012
+    sway:
+      period_ms: 5200
+      amount: 1.6
+ai_pets:
+  name_status: provisional
+  stream:
+    topic: 整点报时直播
+    audience_address: 听见钟声的人
+    catchphrase: 整点啦
+    greeting: 报时台已经就位。整点一到我就开口。
+    signoff: 今天已经报完了。各位晚安。
+    signature_moment: 每次报时都先报一遍今天的日期，再报整点，不省一步
+    speech_priority:
+    - stop_and_fault
+    - urgent_game_event
+    - game_commentary
+    - audience_reply
+    - small_talk
+  body_design:
+    age_group: teen
+    height_in_heads: 3.2
+    measurement: 少女三点二头身，白衬衫配红领结与百褶长裙
