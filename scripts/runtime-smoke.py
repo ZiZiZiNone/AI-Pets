@@ -111,6 +111,33 @@ OPEN_MENU_JS = """
 })()
 """
 
+# The roster the host itself reports, read through the same command the page uses.
+# Counting the folders on disk would only prove the files are there; this proves the
+# host parsed and kept every one of them.
+ROSTER_JS = """
+(function () {
+  var internals = window.__TAURI_INTERNALS__;
+  if (!internals) return JSON.stringify({ error: 'no tauri internals' });
+  return internals.invoke('load_host_configs').then(function (bundle) {
+    var pets = (bundle && bundle.pets) || [];
+    return JSON.stringify({
+      count: pets.length,
+      ids: pets.map(function (p) { return p.id; }),
+      withManifest: pets.filter(function (p) { return p.yaml && p.yaml.length > 0; }).length
+    });
+  }).catch(function (e) { return JSON.stringify({ error: String(e) }); });
+})()
+"""
+
+# The palette the stage is actually painted with. The theme travels in the package, so
+# a pet that paints in someone else's colour is a palette that never reached the page.
+THEME_PRIMARY_JS = """
+(function () {
+  var root = document.querySelector('.pet-stage-root');
+  return root ? root.style.getPropertyValue('--theme-primary').trim() : '';
+})()
+"""
+
 # The radial menu is where `menu_interaction` shows up: opening it reports its warnings and,
 # with the shipped `auto_expand_first: true`, the first branch opens its children by itself.
 MENU_JS = """
@@ -437,6 +464,82 @@ def installed_pets():
     return sorted(p.name for p in pets.iterdir() if (p / "pet.yaml").is_file())
 
 
+def manifest_primary(pet_id):
+    """The primary colour the package declares, read straight out of its manifest."""
+    import re
+
+    manifest = REPO / "pets" / pet_id / "pet.yaml"
+    if not manifest.is_file():
+        return ""
+    match = re.search(
+        r"^\s{2}primary:\s*['\"]?(#[0-9a-fA-F]{6})",
+        manifest.read_text(encoding="utf-8"),
+        re.MULTILINE,
+    )
+    return match.group(1) if match else ""
+
+
+def roster_round_trip(cdp, bus_port, token):
+    """Check the whole roster: every package loaded, and switching repaints the stage.
+
+    The folder count is the claim; the host's own list is the evidence. A package that
+    is on disk but missing from the host is a pet the user cannot pick.
+
+    Two channels are involved and they are not the same one: the switch travels on the
+    app's bus socket, the repaint can only be read out of the page. The bus therefore
+    gets its own connection instead of borrowing the DevTools one.
+    """
+    installed = installed_pets()
+    raw = cdp.evaluate(ROSTER_JS)
+    try:
+        data = json.loads(raw) if isinstance(raw, str) else (raw or {})
+    except (TypeError, ValueError):
+        print(f"  roster probe returned nothing usable: {raw!r}")
+        return False
+    if data.get("error"):
+        print(f"  roster probe failed: {data['error']}")
+        return False
+
+    listed = set(data.get("ids") or [])
+    missing = [pet for pet in installed if pet not in listed]
+    print(f"\n=== roster: {len(installed)} package(s) on disk · {data.get('count')} loaded by the host")
+    print(f"  manifests carried: {data.get('withManifest')}")
+    if missing:
+        print(f"  REGRESSION: the host did not load {len(missing)} package(s): {missing[:8]}")
+        return False
+    if data.get("count") != len(installed):
+        print(f"  REGRESSION: the host loaded {data.get('count')} of {len(installed)} packages")
+        return False
+
+    ok = True
+    sample = []
+    if installed:
+        sample = [installed[0], installed[len(installed) // 2], installed[-1]]
+    bus = CdpSession(f"ws://127.0.0.1:{bus_port}/")
+    bus.connect()
+    try:
+        for pet in sample:
+            bus.send_packet({"token": token, **safe_action("switch_pet", {"pet_id": pet})})
+            answer = bus.recv_packet()
+            if answer.get("status") != "ok":
+                print(f"  REGRESSION: switching to {pet} was refused: {answer}")
+                ok = False
+                continue
+            time.sleep(0.9)
+            applied = cdp.evaluate(THEME_PRIMARY_JS) or ""
+            expected = manifest_primary(pet)
+            if expected and applied.lower() != expected.lower():
+                print(
+                    f"  REGRESSION: {pet} painted {applied!r} while its own palette says {expected!r}"
+                )
+                ok = False
+            else:
+                print(f"  {pet}: switched and painted {applied or '(no theme declared)'}")
+    finally:
+        bus.close()
+    return ok
+
+
 def safe_action(action_id, params):
     return {
         "priority": 1,
@@ -542,6 +645,14 @@ def main():
 
                 print("gesture round trip (click vs 650ms press):")
                 if not slow_press_round_trip(session):
+                    status = 1
+
+                try:
+                    bus_token, _ = read_bus_token()
+                except (ConnectionError, OSError) as exc:
+                    print(f"roster check skipped: no bus token ({exc})")
+                    bus_token = None
+                if bus_token and not roster_round_trip(session, BUS_PORT, bus_token):
                     status = 1
             finally:
                 session.close()
