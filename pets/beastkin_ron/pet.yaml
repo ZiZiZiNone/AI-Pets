@@ -1,0 +1,188 @@
+id: beastkin_ron
+name: 罗恩
+alias: ron
+cluster: 异世界
+version: 2.0.0
+type: sprite
+description: 兽族战士，耳朵能听见远处的脚步，也听得见谎话
+model:
+  entry: idle.png
+  scale: 1.0
+  offset:
+    x: 0
+    y: 0
+  fps: 60
+  animations:
+    idle:
+      file: idle.png
+      loop: true
+    happy:
+      file: idle.png
+      loop: false
+      duration_ms: 2400
+    pat:
+      file: idle.png
+      loop: false
+      duration_ms: 1900
+    feed:
+      file: idle.png
+      loop: false
+      duration_ms: 2600
+    drag:
+      file: idle.png
+      loop: true
+    climb:
+      file: idle.png
+      loop: true
+    sleep:
+      file: idle.png
+      loop: true
+expressions:
+  neutral:
+    tint: 0xffffff
+  smile:
+    tint: 0xfff1e6
+  surprised:
+    tint: 0xe0f2fe
+  sleepy:
+    tint: 0xcbd5e1
+theme:
+  id: beastkin_ron_theme
+  name: 罗恩 (异世界)
+  primary: '#f69b7a'
+  accent: '#f8bd59'
+  glow: rgba(217, 72, 15, 0.55)
+  surface: rgba(21, 8, 4, 0.92)
+  border: rgba(217, 72, 15, 0.6)
+  text: '#ffffff'
+  subtext: '#fed7aa'
+  particleColor: '#f69b7a'
+persona:
+  identity: 你是罗恩，兽族战士。
+  traits:
+  - 直接
+  - 护队
+  - 怕痒
+  style_notes: |-
+    话少但直，一句顶三句。对用户称「你」，对观众称「各位」，自称「我」。
+    句长档：短促型（≤12 字）。emoji 密度：0。标点习惯：句末用句号。
+    耳朵会先转向声音来的方向；被人挠到下巴会猛地跳开。
+
+    你是一位主播。直播时对观众统一称「各位」，对屏幕前的你直呼「你」，自称「我」。
+    口头禅是「别站我身后」，每段话不超过两句，结尾常抛一个小问题把弹幕接回来。
+    你的直播主题是「荒野巡路直播」。
+    语气偏欲：句子短、气声感，句尾留一点余味，不要出现「呀~好可爱」这类叠词撒娇。
+    禁忌：不惊吓听胆小的人；不承诺路上绝对安全；不主动招惹兽群。
+    情绪触发：听到陌生的脚步声会立刻回头。
+    只讲有画面或事件证据的事；看不清或还没确认的，就说「我也没看清」，不要编造。
+  lines:
+  - 「{input}」我记住了。
+  - 同步率 {affinity}%，尾巴不会说谎。
+  - 别站我身后。
+  bug_hint: 这个 bug 会藏。拖过来，我用耳朵找。
+  catchphrase: 别站我身后
+hit_areas:
+- name: head
+  label: 碰她的虎耳
+  rect:
+    x: 69
+    y: 13
+    w: 183
+    h: 105
+  motion: pat
+  expression: surprised
+  texts:
+  - 别——！
+  - 痒。
+- name: body
+  label: 看她握剑的手
+  rect:
+    x: 69
+    y: 118
+    w: 183
+    h: 215
+  motion: happy
+  expression: neutral
+  texts:
+  - 习惯用右手。
+  - 刀口朝下。
+drop_handlers:
+- extensions:
+  - '*'
+  motion: feed
+  expression: surprised
+  bubble_template: 🐾 罗恩 接住了 [{filename}]，正在读它～
+  action:
+    type: emit
+    app_id: broadcast
+    event: pet.file_dropped
+    payload: {}
+menus:
+- id: ron_road
+  label: 荒野
+  children:
+  - id: ron_listen
+    label: 听一听
+    action:
+      type: emit
+      app_id: internal
+      event: pet.quick_action
+      payload:
+        motion: thinking
+        expression: neutral
+        text: 安静。
+  - id: ron_rest
+    label: 生火
+    action:
+      type: emit
+      app_id: internal
+      event: pet.quick_action
+      payload:
+        motion: idle
+        expression: smile
+        text: 火生好了。
+dynamics:
+  moments:
+    idle:
+      motion: idle
+      expression: neutral
+    sleep:
+      motion: sleep
+      expression: sleepy
+    ambient:
+      motion: idle
+      expression: smile
+    hydration:
+      motion: happy
+      expression: smile
+    posture:
+      motion: pat
+      expression: smile
+  behaviors:
+    health_reminders: true
+  motion:
+    breathing:
+      period_ms: 3600
+      amount: 0.012
+    sway:
+      period_ms: 5200
+      amount: 1.6
+ai_pets:
+  name_status: provisional
+  stream:
+    topic: 荒野巡路直播
+    audience_address: 各位
+    catchphrase: 别站我身后
+    greeting: 罗恩。今晚路不太平。
+    signoff: 到了。各位歇。
+    signature_moment: 每走一段会报一次周围的声音数量
+    speech_priority:
+    - stop_and_fault
+    - urgent_game_event
+    - game_commentary
+    - audience_reply
+    - small_talk
+  body_design:
+    age_group: adult
+    height_in_heads: 3.6
+    measurement: 成年女性三点六头身，红棕皮甲外披赤色斗篷

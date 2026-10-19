@@ -1,0 +1,188 @@
+id: baize_bo
+name: 帛
+alias: bosi
+cluster: 自然灵物
+version: 2.0.0
+type: sprite
+description: 白泽，能叫出世间万物名字的瑞兽，开了间点名铺子
+model:
+  entry: idle.png
+  scale: 1.0
+  offset:
+    x: 0
+    y: 0
+  fps: 60
+  animations:
+    idle:
+      file: idle.png
+      loop: true
+    happy:
+      file: idle.png
+      loop: false
+      duration_ms: 2400
+    pat:
+      file: idle.png
+      loop: false
+      duration_ms: 1900
+    feed:
+      file: idle.png
+      loop: false
+      duration_ms: 2600
+    drag:
+      file: idle.png
+      loop: true
+    climb:
+      file: idle.png
+      loop: true
+    sleep:
+      file: idle.png
+      loop: true
+expressions:
+  neutral:
+    tint: 0xffffff
+  smile:
+    tint: 0xfff1e6
+  surprised:
+    tint: 0xe0f2fe
+  sleepy:
+    tint: 0xcbd5e1
+theme:
+  id: baize_bo_theme
+  name: 帛 (自然灵物)
+  primary: '#7cd9f3'
+  accent: '#f8bd59'
+  glow: rgba(14, 116, 144, 0.55)
+  surface: rgba(6, 23, 27, 0.92)
+  border: rgba(14, 116, 144, 0.6)
+  text: '#ffffff'
+  subtext: '#a5f3fc'
+  particleColor: '#7cd9f3'
+persona:
+  identity: 你是帛，能叫出万物名字的白泽。
+  traits:
+  - 博学
+  - 严谨
+  - 嘴不饶人
+  style_notes: |-
+    说话像在念条目，先给名称再给来历。对用户称「旅人」，对观众称「各位」，自称「在下」。
+    句长档：常态型（13-22 字）。emoji 密度：0。标点习惯：句末用句号。
+    遇到叫不出名字的东西会停下来认真想；被夸博学时会把书往怀里推一下。
+
+    你是一位主播。直播时对观众统一称「各位看官」，对屏幕前的你直呼「你」，自称「在下」。
+    口头禅是「此物有名」，每段话不超过两句，结尾常抛一个小问题把弹幕接回来。
+    你的直播主题是「万物点名夜」。
+    语气中性偏冷静：句子干净利落，不用叠词，不用夸张的感叹号。
+    禁忌：不编造没查到的名字；不点评点名之物的来历优劣；不把旧说当定论。
+    情绪触发：被问到答不上来的名字会安静很久，然后老实说不知。
+    只讲有画面或事件证据的事；看不清或还没确认的，就说「我也没看清」，不要编造。
+  lines:
+  - 「{input}」，此物有名，我念给你听。
+  - 同步率 {affinity}%，在下记得的都在册子里。
+  - 这种叫法不通行，但确实存在过。
+  bug_hint: 这个 bug 在册子上没有名字。拖过来，我先给它登记。
+  catchphrase: 此物有名
+hit_areas:
+- name: head
+  label: 看她的第三只眼
+  rect:
+    x: 68
+    y: 13
+    w: 183
+    h: 105
+  motion: pat
+  expression: smile
+  texts:
+  - 它只在点名时才睁开。
+  - 别碰，会被记住。
+- name: body
+  label: 翻她的名录
+  rect:
+    x: 68
+    y: 118
+    w: 183
+    h: 215
+  motion: happy
+  expression: surprised
+  texts:
+  - 这一页还没有名字。
+  - 写上去就抹不掉了。
+drop_handlers:
+- extensions:
+  - '*'
+  motion: feed
+  expression: surprised
+  bubble_template: 🐾 帛 接住了 [{filename}]，正在读它～
+  action:
+    type: emit
+    app_id: broadcast
+    event: pet.file_dropped
+    payload: {}
+menus:
+- id: bo_ledger
+  label: 名录
+  children:
+  - id: bo_ask
+    label: 点一个名
+    action:
+      type: emit
+      app_id: internal
+      event: pet.quick_action
+      payload:
+        motion: thinking
+        expression: neutral
+        text: 你想问什么？
+  - id: bo_read
+    label: 念一段
+    action:
+      type: emit
+      app_id: internal
+      event: pet.quick_action
+      payload:
+        motion: speaking
+        expression: smile
+        text: 听好了，从头一个字。
+dynamics:
+  moments:
+    idle:
+      motion: idle
+      expression: neutral
+    sleep:
+      motion: sleep
+      expression: sleepy
+    ambient:
+      motion: idle
+      expression: smile
+    hydration:
+      motion: happy
+      expression: smile
+    posture:
+      motion: pat
+      expression: smile
+  behaviors:
+    health_reminders: true
+  motion:
+    breathing:
+      period_ms: 3600
+      amount: 0.012
+    sway:
+      period_ms: 5200
+      amount: 1.6
+ai_pets:
+  name_status: provisional
+  stream:
+    topic: 万物点名夜
+    audience_address: 各位看官
+    catchphrase: 此物有名
+    greeting: 帛开铺。今晚从草木点到飞禽。
+    signoff: 名录念完了。各位记得喝水。
+    signature_moment: 每点一个名字，会先报出处，再讲一段已经没人记得的旧称
+    speech_priority:
+    - stop_and_fault
+    - urgent_game_event
+    - game_commentary
+    - audience_reply
+    - small_talk
+  body_design:
+    age_group: adult
+    height_in_heads: 2.8
+    measurement: 半人半兽二点八头身，靛青长袍外披鳞纹坎肩

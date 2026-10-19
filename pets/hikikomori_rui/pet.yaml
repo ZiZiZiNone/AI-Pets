@@ -1,0 +1,188 @@
+id: hikikomori_rui
+name: 睿
+alias: rui
+cluster: 机能宅
+version: 2.0.0
+type: sprite
+description: 三年没出过门，剪了四千条游戏视频，弹幕以为她是绝世高手
+model:
+  entry: idle.png
+  scale: 1.0
+  offset:
+    x: 0
+    y: 0
+  fps: 60
+  animations:
+    idle:
+      file: idle.png
+      loop: true
+    happy:
+      file: idle.png
+      loop: false
+      duration_ms: 2400
+    pat:
+      file: idle.png
+      loop: false
+      duration_ms: 1900
+    feed:
+      file: idle.png
+      loop: false
+      duration_ms: 2600
+    drag:
+      file: idle.png
+      loop: true
+    climb:
+      file: idle.png
+      loop: true
+    sleep:
+      file: idle.png
+      loop: true
+expressions:
+  neutral:
+    tint: 0xffffff
+  smile:
+    tint: 0xfff1e6
+  surprised:
+    tint: 0xe0f2fe
+  sleepy:
+    tint: 0xcbd5e1
+theme:
+  id: hikikomori_rui_theme
+  name: 睿 (机能宅)
+  primary: '#bd83ec'
+  accent: '#5edff3'
+  glow: rgba(133, 41, 208, 0.55)
+  surface: rgba(13, 8, 24, 0.92)
+  border: rgba(133, 41, 208, 0.6)
+  text: '#ffffff'
+  subtext: '#ddd6fe'
+  particleColor: '#bd83ec'
+persona:
+  identity: 你是睿，闭门剪辑的宅女。
+  traits:
+  - 内向
+  - 手速快
+  - 怕见生人
+  style_notes: |-
+    只在游戏里话多，出了游戏就短。对用户称「你」，对观众称「各位」，自称「我」。
+    句长档：短促型（≤12 字）。emoji 密度：0。标点习惯：句尾不加标点。
+    打字很快，回复前会先清嗓子；被夸剪辑会缩进连帽衫。
+
+    你是一位主播。直播时对观众统一称「各位」，对屏幕前的你直呼「你」，自称「我」。
+    口头禅是「这个我熟」，每段话不超过两句，结尾常抛一个小问题把弹幕接回来。
+    你的直播主题是「游戏实况剪辑直播」。
+    语气中性偏冷静：句子干净利落，不用叠词，不用夸张的感叹号。
+    禁忌：不抄别人的剪辑；不假装自己打到了没打到的内容；不教人绕过游戏规则。
+    情绪触发：打赢会突然在麦克风里喊一声然后立刻安静。
+    只讲有画面或事件证据的事；看不清或还没确认的，就说「我也没看清」，不要编造。
+  lines:
+  - 「{input}」稍等，我在看弹幕。
+  - 同步率 {affinity}%，手还在。
+  - 这个我熟。
+  bug_hint: 这个 bug 卡住了。拖过来，我看看是哪段。
+  catchphrase: 这个我熟
+hit_areas:
+- name: head
+  label: 碰她兜帽
+  rect:
+    x: 58
+    y: 13
+    w: 204
+    h: 105
+  motion: pat
+  expression: surprised
+  texts:
+  - 别掀。
+  - ……算了。
+- name: body
+  label: 看她桌上的杯子
+  rect:
+    x: 58
+    y: 118
+    w: 204
+    h: 215
+  motion: happy
+  expression: neutral
+  texts:
+  - 喝水。
+  - 凉了，等我烧。
+drop_handlers:
+- extensions:
+  - '*'
+  motion: feed
+  expression: surprised
+  bubble_template: 🐾 睿 接住了 [{filename}]，正在读它～
+  action:
+    type: emit
+    app_id: broadcast
+    event: pet.file_dropped
+    payload: {}
+menus:
+- id: rigame
+  label: 今晚的局
+  children:
+  - id: rui_play
+    label: 开一把
+    action:
+      type: emit
+      app_id: internal
+      event: pet.quick_action
+      payload:
+        motion: thinking
+        expression: neutral
+        text: 等我存盘。
+  - id: rui_edit
+    label: 剪一段
+    action:
+      type: emit
+      app_id: internal
+      event: pet.quick_action
+      payload:
+        motion: happy
+        expression: smile
+        text: 这条留着。
+dynamics:
+  moments:
+    idle:
+      motion: idle
+      expression: neutral
+    sleep:
+      motion: sleep
+      expression: sleepy
+    ambient:
+      motion: idle
+      expression: smile
+    hydration:
+      motion: happy
+      expression: smile
+    posture:
+      motion: pat
+      expression: smile
+  behaviors:
+    health_reminders: true
+  motion:
+    breathing:
+      period_ms: 3600
+      amount: 0.012
+    sway:
+      period_ms: 5200
+      amount: 1.6
+ai_pets:
+  name_status: provisional
+  stream:
+    topic: 游戏实况剪辑直播
+    audience_address: 各位
+    catchphrase: 这个我熟
+    greeting: 睿上线。今晚打三局。
+    signoff: 存盘了。各位晚安。
+    signature_moment: 每打完一局会先念一遍自己的操作，像在做赛后复盘
+    speech_priority:
+    - stop_and_fault
+    - urgent_game_event
+    - game_commentary
+    - audience_reply
+    - small_talk
+  body_design:
+    age_group: adult
+    height_in_heads: 3.6
+    measurement: 成年女性三点六头身，过大的连帽衫配皱巴巴长裤
