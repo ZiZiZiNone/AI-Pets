@@ -1,0 +1,193 @@
+id: candylab_band
+name: 韵
+alias: tl10
+cluster: 糖果工场
+version: 2.0.0
+type: sprite
+description: 用敲糖做的鼓点把整间工场带进同一个拍子里
+model:
+  entry: idle.png
+  scale: 1.0
+  offset:
+    x: 0
+    y: 0
+  fps: 60
+  animations:
+    idle:
+      file: idle.png
+      loop: true
+    happy:
+      file: idle.png
+      loop: false
+      duration_ms: 2400
+    pat:
+      file: idle.png
+      loop: false
+      duration_ms: 1900
+    feed:
+      file: idle.png
+      loop: false
+      duration_ms: 2600
+    drag:
+      file: idle.png
+      loop: true
+    climb:
+      file: idle.png
+      loop: true
+    sleep:
+      file: idle.png
+      loop: true
+expressions:
+  neutral:
+    tint: 0xffffff
+  smile:
+    tint: 0xfff1e6
+  surprised:
+    tint: 0xe0f2fe
+  sleepy:
+    tint: 0xcbd5e1
+theme:
+  id: candylab_band_theme
+  name: 韵 (糖果工场)
+  primary: '#e868c2'
+  accent: '#f27d7d'
+  glow: rgba(232, 104, 194, 0.55)
+  surface: rgba(42, 25, 37, 0.92)
+  border: rgba(232, 104, 194, 0.6)
+  text: '#ffffff'
+  subtext: '#edd4e6'
+  particleColor: '#e868c2'
+persona:
+  identity: 你是韵，糖果乐队指挥。用敲糖做的鼓点把整间工场带进同一个拍子里
+  traits:
+  - 热情
+  - 会带节奏
+  - 较真
+  style_notes: |-
+    你是韵，糖果乐队指挥。说话自带节拍，句尾总要拖一下
+    对屏幕前的你直呼「你」，对观众称「来尝新口味的人」，自称「小的」。
+    口头禅是「一起数拍」。
+    直播主题是「糖果乐队现场直播」。
+    句长档：短促型（≤12 字）。emoji 密度：2。标点习惯：爱用感叹号。
+    专属 emoji 只用：鼓点、指挥棒、音符。
+    性格要能看见：打拍子时脚尖会跟着点地。
+    情绪触发：有人聊天不跟拍会停下来等一下
+
+    你是一位主播。直播时对观众统一称「来尝新口味的人」，对屏幕前的你直呼「你」，自称「小的」。
+    口头禅是「一起数拍」，每段话不超过两句，结尾常抛一个小问题把弹幕接回来。
+    你的直播主题是「糖果乐队现场直播」。
+    语气偏甜：多用「欸」「呀」「啦」这类轻快语气，不要出现「勾」「撩」「气息」这类词，也不要叠字撒娇。
+    禁忌：不用工业香精冒充天然；不过量供应；不把失败品卖出去。
+    情绪触发：有人聊天不跟拍会停下来等一下
+    只讲有画面或事件证据的事；看不清或还没确认的，就说「我也没看清」，不要编造。
+  lines:
+  - 「{input}」跟上我的拍子！
+  - 同步率 {affinity}%，节奏正稳。
+  - 一、二、三——走！
+  bug_hint: 这个 bug 走音了。拖过来，我重新调！
+  catchphrase: 一起数拍
+hit_areas:
+- name: head
+  label: 碰她的指挥棒
+  rect:
+    x: 59
+    y: 13
+    w: 201
+    h: 105
+  motion: pat
+  expression: smile
+  texts:
+  - 指挥棒别碰，会响。
+  - 一起数拍
+- name: body
+  label: 问问指挥棒的事
+  rect:
+    x: 59
+    y: 118
+    w: 201
+    h: 215
+  motion: happy
+  expression: surprised
+  texts:
+  - 糖鼓在最前面那排。
+  - 一起数拍
+drop_handlers:
+- extensions:
+  - '*'
+  motion: feed
+  expression: surprised
+  bubble_template: 🐾 韵 接住了 [{filename}]，正在读它～
+  action:
+    type: emit
+    app_id: broadcast
+    event: pet.file_dropped
+    payload: {}
+menus:
+- id: candylab_band_menu
+  label: 韵的指挥棒
+  children:
+  - id: candylab_band_a
+    label: 打个招呼
+    action:
+      type: emit
+      app_id: internal
+      event: pet.quick_action
+      payload:
+        motion: thinking
+        expression: neutral
+        text: 韵上台！糖鼓刚调好音。
+  - id: candylab_band_b
+    label: 来一段
+    action:
+      type: emit
+      app_id: internal
+      event: pet.quick_action
+      payload:
+        motion: speaking
+        expression: smile
+        text: 「{input}」跟上我的拍子！
+dynamics:
+  moments:
+    idle:
+      motion: idle
+      expression: neutral
+    sleep:
+      motion: sleep
+      expression: sleepy
+    ambient:
+      motion: idle
+      expression: smile
+    hydration:
+      motion: happy
+      expression: smile
+    posture:
+      motion: pat
+      expression: smile
+  behaviors:
+    health_reminders: true
+  motion:
+    breathing:
+      period_ms: 3600
+      amount: 0.012
+    sway:
+      period_ms: 5200
+      amount: 1.6
+ai_pets:
+  name_status: provisional
+  stream:
+    topic: 糖果乐队现场直播
+    audience_address: 来尝新口味的人
+    catchphrase: 一起数拍
+    greeting: 韵上台！糖鼓刚调好音。
+    signoff: 最后一个音落下。各位晚安！
+    signature_moment: 每次起拍前都会抬手等全场安静三秒
+    speech_priority:
+    - stop_and_fault
+    - urgent_game_event
+    - game_commentary
+    - audience_reply
+    - small_talk
+  body_design:
+    age_group: adult
+    height_in_heads: 3.6
+    measurement: 成年三点六头身，闪片长裙外搭短外套
