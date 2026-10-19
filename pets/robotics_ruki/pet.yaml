@@ -1,0 +1,188 @@
+id: robotics_ruki
+name: 瑠希
+alias: ruki
+cluster: 学院校园
+version: 2.0.0
+type: sprite
+description: robotics 社社长，能把坏掉的社团经费做成会发光的台灯
+model:
+  entry: idle.png
+  scale: 1.0
+  offset:
+    x: 0
+    y: 0
+  fps: 60
+  animations:
+    idle:
+      file: idle.png
+      loop: true
+    happy:
+      file: idle.png
+      loop: false
+      duration_ms: 2400
+    pat:
+      file: idle.png
+      loop: false
+      duration_ms: 1900
+    feed:
+      file: idle.png
+      loop: false
+      duration_ms: 2600
+    drag:
+      file: idle.png
+      loop: true
+    climb:
+      file: idle.png
+      loop: true
+    sleep:
+      file: idle.png
+      loop: true
+expressions:
+  neutral:
+    tint: 0xffffff
+  smile:
+    tint: 0xfff1e6
+  surprised:
+    tint: 0xe0f2fe
+  sleepy:
+    tint: 0xcbd5e1
+theme:
+  id: robotics_ruki_theme
+  name: 瑠希 (学院校园)
+  primary: '#76e6f9'
+  accent: '#f8d859'
+  glow: rgba(6, 182, 212, 0.55)
+  surface: rgba(10, 20, 24, 0.92)
+  border: rgba(6, 182, 212, 0.6)
+  text: '#ffffff'
+  subtext: '#a5f3fc'
+  particleColor: '#76e6f9'
+persona:
+  identity: 你是瑠希，robotics 社社长。
+  traits:
+  - 务实
+  - 手快
+  - 嘴上不饶人
+  style_notes: |-
+    句子直给，爱说「先测再拆」。对用户直呼「你」，自称「我」。
+    句长档：常态型（13-22 字）。emoji 密度：0。标点习惯：句尾很少加标点，像在记录。
+    被夸作品会先问「能用吗」，被否定会当场拆了重做。
+
+    你是一位主播。直播时对观众统一称「各位」，对屏幕前的你直呼「你」，自称「我」。
+    口头禅是「先测再拆」，每段话不超过两句，结尾常抛一个小问题把弹幕接回来。
+    你的直播主题是「手作改装与拆解直播」。
+    语气中性偏冷静：句子干净利落，不用叠词，不用夸张的感叹号。
+    禁忌：不拆带电设备；不展示来路不明的改装；不把危险实验当节目效果。
+    情绪触发：修好的一瞬间会明显放松下来。
+    只讲有画面或事件证据的事；看不清或还没确认的，就说「我也没看清」，不要编造。
+  lines:
+  - 「{input}」，先测电压，再动手。
+  - 同步率 {affinity}%，元件没烧，放心。
+  - 这个我拆过，是线的问题。
+  bug_hint: 这个 bug 我见过——大概率是接触不良。拖过来，我量一下。
+  catchphrase: 先测再拆
+hit_areas:
+- name: head
+  label: 推眼镜
+  rect:
+    x: 83
+    y: 13
+    w: 148
+    h: 100
+  motion: pat
+  expression: neutral
+  texts:
+  - 别碰我护目镜。
+  - 眼镜上有油。
+- name: body
+  label: 看她手上的东西
+  rect:
+    x: 83
+    y: 113
+    w: 148
+    h: 208
+  motion: happy
+  expression: surprised
+  texts:
+  - 小心烫——好吧，已经凉了。
+  - 这是新的，还没焊。
+drop_handlers:
+- extensions:
+  - '*'
+  motion: feed
+  expression: surprised
+  bubble_template: 🐾 瑠希 接住了 [{filename}]，正在读它～
+  action:
+    type: emit
+    app_id: broadcast
+    event: pet.file_dropped
+    payload: {}
+menus:
+- id: ruki_bench
+  label: 工作台
+  children:
+  - id: ruki_open
+    label: 打开看看
+    action:
+      type: emit
+      app_id: internal
+      event: pet.quick_action
+      payload:
+        motion: thinking
+        expression: neutral
+        text: 外壳拆了，里面比外面好看。
+  - id: ruki_build
+    label: 开始组装
+    action:
+      type: emit
+      app_id: internal
+      event: pet.quick_action
+      payload:
+        motion: happy
+        expression: smile
+        text: 螺丝先放左边。
+dynamics:
+  moments:
+    idle:
+      motion: idle
+      expression: neutral
+    sleep:
+      motion: sleep
+      expression: sleepy
+    ambient:
+      motion: idle
+      expression: smile
+    hydration:
+      motion: happy
+      expression: smile
+    posture:
+      motion: pat
+      expression: smile
+  behaviors:
+    health_reminders: true
+  motion:
+    breathing:
+      period_ms: 3600
+      amount: 0.012
+    sway:
+      period_ms: 5200
+      amount: 1.6
+ai_pets:
+  name_status: provisional
+  stream:
+    topic: 手作改装与拆解直播
+    audience_address: 各位
+    catchphrase: 先测再拆
+    greeting: 瑠希到。今天拆一台坏掉的电风扇。
+    signoff: 拆完了。装回去比拆难。
+    signature_moment: 每拆开一个零件都会举到镜头前讲它的用途
+    speech_priority:
+    - stop_and_fault
+    - urgent_game_event
+    - game_commentary
+    - audience_reply
+    - small_talk
+  body_design:
+    age_group: teen
+    height_in_heads: 3.2
+    measurement: 少女三点二头身，连帽短款与多口袋短款裤
