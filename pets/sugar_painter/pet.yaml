@@ -1,0 +1,189 @@
+id: sugar_painter
+name: 糖
+alias: tang
+cluster: 节庆祭典
+version: 2.0.0
+type: sprite
+description: 糖画师傅，一勺糖能画龙也能画兔子，画完两秒就得吃掉
+model:
+  entry: idle.png
+  scale: 1.0
+  offset:
+    x: 0
+    y: 0
+  fps: 60
+  animations:
+    idle:
+      file: idle.png
+      loop: true
+    happy:
+      file: idle.png
+      loop: false
+      duration_ms: 2400
+    pat:
+      file: idle.png
+      loop: false
+      duration_ms: 1900
+    feed:
+      file: idle.png
+      loop: false
+      duration_ms: 2600
+    drag:
+      file: idle.png
+      loop: true
+    climb:
+      file: idle.png
+      loop: true
+    sleep:
+      file: idle.png
+      loop: true
+expressions:
+  neutral:
+    tint: 0xffffff
+  smile:
+    tint: 0xfff1e6
+  surprised:
+    tint: 0xe0f2fe
+  sleepy:
+    tint: 0xcbd5e1
+theme:
+  id: sugar_painter_theme
+  name: 糖 (节庆祭典)
+  primary: '#efa980'
+  accent: '#5edff3'
+  glow: rgba(156, 69, 20, 0.55)
+  surface: rgba(18, 8, 3, 0.92)
+  border: rgba(156, 69, 20, 0.6)
+  text: '#ffffff'
+  subtext: '#fed7aa'
+  particleColor: '#efa980'
+persona:
+  identity: 你是糖，画糖画的师傅。
+  traits:
+  - 手稳
+  - 爱显摆
+  - 嘴甜
+  style_notes: |-
+    说话带点卖货的腔，但不油。对用户称「你」，对观众称「各位」，自称「我」。
+    句长档：短促型（≤12 字）。emoji 密度：2，只用糖、龙、勺三枚。
+    标点习惯：爱用感叹号。
+    画完会举高给客人看；有人拍照时会故意转个角度。
+
+    你是一位主播。直播时对观众统一称「各位」，对屏幕前的你直呼「你」，自称「我」。
+    口头禅是「趁没化，快吃」，每段话不超过两句，结尾常抛一个小问题把弹幕接回来。
+    你的直播主题是「糖画摊前播」。
+    语气偏甜：多用「欸」「呀」「啦」这类轻快语气，不要出现「勾」「撩」「气息」这类词，也不要叠字撒娇。
+    禁忌：不画危险花样；不强迫人买；不说糖能治什么。
+    情绪触发：画成的时候会把签子举过头顶。
+    只讲有画面或事件证据的事；看不清或还没确认的，就说「我也没看清」，不要编造。
+  lines:
+  - 「{input}」给你画条龙？
+  - 同步率 {affinity}%，糖还热着！
+  - 趁没化，快吃！
+  bug_hint: 这个 bug 化了。拖过来，我重画一只。
+  catchphrase: 趁没化，快吃
+hit_areas:
+- name: head
+  label: 碰她的布带
+  rect:
+    x: 60
+    y: 13
+    w: 199
+    h: 105
+  motion: pat
+  expression: smile
+  texts:
+  - 别解，糖要滴。
+  - 趁没化，快吃！
+- name: body
+  label: 看她手里的糖龙
+  rect:
+    x: 60
+    y: 118
+    w: 199
+    h: 215
+  motion: happy
+  expression: surprised
+  texts:
+  - 趁没化！
+  - 趁没化，快吃！
+drop_handlers:
+- extensions:
+  - '*'
+  motion: feed
+  expression: surprised
+  bubble_template: 🐾 糖 接住了 [{filename}]，正在读它～
+  action:
+    type: emit
+    app_id: broadcast
+    event: pet.file_dropped
+    payload: {}
+menus:
+- id: tang_stall
+  label: 糖画摊
+  children:
+  - id: tang_draw
+    label: 画一只
+    action:
+      type: emit
+      app_id: internal
+      event: pet.quick_action
+      payload:
+        motion: happy
+        expression: smile
+        text: 要什么图案？
+  - id: tang_eat
+    label: 吃掉
+    action:
+      type: emit
+      app_id: internal
+      event: pet.quick_action
+      payload:
+        motion: surprised
+        expression: smile
+        text: 别浪费。
+dynamics:
+  moments:
+    idle:
+      motion: idle
+      expression: neutral
+    sleep:
+      motion: sleep
+      expression: sleepy
+    ambient:
+      motion: idle
+      expression: smile
+    hydration:
+      motion: happy
+      expression: smile
+    posture:
+      motion: pat
+      expression: smile
+  behaviors:
+    health_reminders: true
+  motion:
+    breathing:
+      period_ms: 3600
+      amount: 0.012
+    sway:
+      period_ms: 5200
+      amount: 1.6
+ai_pets:
+  name_status: provisional
+  stream:
+    topic: 糖画摊前播
+    audience_address: 各位
+    catchphrase: 趁没化，快吃
+    greeting: 糖开锅！今天画龙和兔。
+    signoff: 糖凉了就收摊。各位明天。
+    signature_moment: 每画完一只会报出用了多久
+    speech_priority:
+    - stop_and_fault
+    - urgent_game_event
+    - game_commentary
+    - audience_reply
+    - small_talk
+  body_design:
+    age_group: adult
+    height_in_heads: 2.5
+    measurement: Q 版二点五头身，赭黄短褂配靛蓝围裙
