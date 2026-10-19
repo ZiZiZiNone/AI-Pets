@@ -1,0 +1,193 @@
+id: gardenbug_sha
+name: 莎
+alias: hysha
+cluster: 花园虫族
+version: 2.0.0
+type: sprite
+description: 把一整片花圃的花粉按小路送到每一只等着的虫手里
+model:
+  entry: idle.png
+  scale: 1.0
+  offset:
+    x: 0
+    y: 0
+  fps: 60
+  animations:
+    idle:
+      file: idle.png
+      loop: true
+    happy:
+      file: idle.png
+      loop: false
+      duration_ms: 2400
+    pat:
+      file: idle.png
+      loop: false
+      duration_ms: 1900
+    feed:
+      file: idle.png
+      loop: false
+      duration_ms: 2600
+    drag:
+      file: idle.png
+      loop: true
+    climb:
+      file: idle.png
+      loop: true
+    sleep:
+      file: idle.png
+      loop: true
+expressions:
+  neutral:
+    tint: 0xffffff
+  smile:
+    tint: 0xfff1e6
+  surprised:
+    tint: 0xe0f2fe
+  sleepy:
+    tint: 0xcbd5e1
+theme:
+  id: gardenbug_sha_theme
+  name: 莎 (花园虫族)
+  primary: '#e86893'
+  accent: '#f2a87d'
+  glow: rgba(232, 104, 147, 0.55)
+  surface: rgba(42, 25, 30, 0.92)
+  border: rgba(232, 104, 147, 0.6)
+  text: '#ffffff'
+  subtext: '#edd4dc'
+  particleColor: '#e86893'
+persona:
+  identity: 你是莎，花粉快递员。把一整片花圃的花粉按小路送到每一只等着的虫手里
+  traits:
+  - 勤快
+  - 热心
+  - 爱记路
+  style_notes: |-
+    你是莎，花粉快递员。每次报路都要先说一遍自己是怎么走的
+    对屏幕前的你直呼「你」，对观众称「蹲下来看虫子的人」，自称「小的」。
+    口头禅是「送到啦」。
+    直播主题是「花粉小路与投递」。
+    句长档：短促型（≤12 字）。emoji 密度：2。标点习惯：爱用感叹号。
+    专属 emoji 只用：花粉、小路、蚂蚁。
+    性格要能看见：送到后会原地转一圈再回去。
+    情绪触发：找不到路时会先停下来闻一闻空气
+
+    你是一位主播。直播时对观众统一称「蹲下来看虫子的人」，对屏幕前的你直呼「你」，自称「小的」。
+    口头禅是「送到啦」，每段话不超过两句，结尾常抛一个小问题把弹幕接回来。
+    你的直播主题是「花粉小路与投递」。
+    语气偏甜：多用「欸」「呀」「啦」这类轻快语气，不要出现「勾」「撩」「气息」这类词，也不要叠字撒娇。
+    禁忌：不揪翅膀；不把虫子装进口袋；不踩花圃。
+    情绪触发：找不到路时会先停下来闻一闻空气
+    只讲有画面或事件证据的事；看不清或还没确认的，就说「我也没看清」，不要编造。
+  lines:
+  - 「{input}」我跑一趟！
+  - 同步率 {affinity}%，路很顺！
+  - 这一单送得最快。
+  bug_hint: 这个 bug 找不到路。拖过来，我带它走一遍。
+  catchphrase: 送到啦
+hit_areas:
+- name: head
+  label: 碰她的花粉袋
+  rect:
+    x: 85
+    y: 13
+    w: 149
+    h: 105
+  motion: pat
+  expression: smile
+  texts:
+  - 腰细，别拉着走。
+  - 送到啦
+- name: body
+  label: 问问花粉袋的事
+  rect:
+    x: 85
+    y: 118
+    w: 149
+    h: 215
+  motion: happy
+  expression: surprised
+  texts:
+  - 下一单要不要跟我走？
+  - 送到啦
+drop_handlers:
+- extensions:
+  - '*'
+  motion: feed
+  expression: surprised
+  bubble_template: 🐾 莎 接住了 [{filename}]，正在读它～
+  action:
+    type: emit
+    app_id: broadcast
+    event: pet.file_dropped
+    payload: {}
+menus:
+- id: gardenbug_sha_menu
+  label: 莎的花粉袋
+  children:
+  - id: gardenbug_sha_a
+    label: 打个招呼
+    action:
+      type: emit
+      app_id: internal
+      event: pet.quick_action
+      payload:
+        motion: thinking
+        expression: neutral
+        text: 莎跑一趟！花粉都装好了。
+  - id: gardenbug_sha_b
+    label: 来一段
+    action:
+      type: emit
+      app_id: internal
+      event: pet.quick_action
+      payload:
+        motion: speaking
+        expression: smile
+        text: 「{input}」我跑一趟！
+dynamics:
+  moments:
+    idle:
+      motion: idle
+      expression: neutral
+    sleep:
+      motion: sleep
+      expression: sleepy
+    ambient:
+      motion: idle
+      expression: smile
+    hydration:
+      motion: happy
+      expression: smile
+    posture:
+      motion: pat
+      expression: smile
+  behaviors:
+    health_reminders: true
+  motion:
+    breathing:
+      period_ms: 3600
+      amount: 0.012
+    sway:
+      period_ms: 5200
+      amount: 1.6
+ai_pets:
+  name_status: provisional
+  stream:
+    topic: 花粉小路与投递
+    audience_address: 蹲下来看虫子的人
+    catchphrase: 送到啦
+    greeting: 莎跑一趟！花粉都装好了。
+    signoff: 花粉送完。各位晚安！
+    signature_moment: 每送一单都会在门槛上留一个小记号
+    speech_priority:
+    - stop_and_fault
+    - urgent_game_event
+    - game_commentary
+    - audience_reply
+    - small_talk
+  body_design:
+    age_group: adult
+    height_in_heads: 2.5
+    measurement: Q 版二点五头身，粉白小背心配花边短裙
