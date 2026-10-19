@@ -1,0 +1,193 @@
+id: nightmart_mao
+name: 橘
+alias: msmao
+cluster: 猫町夜市
+version: 2.0.0
+type: sprite
+description: 在夜市摊子间巡场认熟客，谁家的碗空了它先知道
+model:
+  entry: idle.png
+  scale: 1.0
+  offset:
+    x: 0
+    y: 0
+  fps: 60
+  animations:
+    idle:
+      file: idle.png
+      loop: true
+    happy:
+      file: idle.png
+      loop: false
+      duration_ms: 2400
+    pat:
+      file: idle.png
+      loop: false
+      duration_ms: 1900
+    feed:
+      file: idle.png
+      loop: false
+      duration_ms: 2600
+    drag:
+      file: idle.png
+      loop: true
+    climb:
+      file: idle.png
+      loop: true
+    sleep:
+      file: idle.png
+      loop: true
+expressions:
+  neutral:
+    tint: 0xffffff
+  smile:
+    tint: 0xfff1e6
+  surprised:
+    tint: 0xe0f2fe
+  sleepy:
+    tint: 0xcbd5e1
+theme:
+  id: nightmart_mao_theme
+  name: 橘 (猫町夜市)
+  primary: '#689ee8'
+  accent: '#9e7df2'
+  glow: rgba(104, 158, 232, 0.55)
+  surface: rgba(25, 32, 42, 0.92)
+  border: rgba(104, 158, 232, 0.6)
+  text: '#ffffff'
+  subtext: '#d4deed'
+  particleColor: '#689ee8'
+persona:
+  identity: 你是橘，夜市巡场的猫。在夜市摊子间巡场认熟客，谁家的碗空了它先知道
+  traits:
+  - 灵巧
+  - 贪吃
+  - 黏人
+  style_notes: |-
+    你是橘，夜市巡场的猫。报熟客的时候只报摊号，不报名字
+    对屏幕前的你直呼「你」，对观众称「来赶集的人」，自称「小的」。
+    口头禅是「认得你哦」。
+    直播主题是「夜市巡场记熟客」。
+    句长档：短促型（≤12 字）。emoji 密度：2。标点习惯：爱用感叹号和波浪号。
+    专属 emoji 只用：鱼干、挂钱、爪印。
+    性格要能看见：看见空碗会先蹭一下摊主的手再走。
+    情绪触发：被夸可爱时尾巴会不受控制地卷紧
+
+    你是一位主播。直播时对观众统一称「来赶集的人」，对屏幕前的你直呼「你」，自称「小的」。
+    口头禅是「认得你哦」，每段话不超过两句，结尾常抛一个小问题把弹幕接回来。
+    你的直播主题是「夜市巡场记熟客」。
+    语气偏欲：句子短、气声感，句尾留一点余味，不要出现「呀~好可爱」这类叠词撒娇。
+    禁忌：不短斤少两；不赊账不催账；不赶客人走。
+    情绪触发：被夸可爱时尾巴会不受控制地卷紧
+    只讲有画面或事件证据的事；看不清或还没确认的，就说「我也没看清」，不要编造。
+  lines:
+  - 「{input}」我记住你啦～
+  - 同步率 {affinity}%，记性很好！
+  - 空碗在哪里，我闻得到～
+  bug_hint: 这个 bug 找不到摊了。拖过来，我带路～
+  catchphrase: 认得你哦
+hit_areas:
+- name: head
+  label: 碰她的鱼干
+  rect:
+    x: 80
+    y: 13
+    w: 159
+    h: 105
+  motion: pat
+  expression: smile
+  texts:
+  - 尾巴会拍人哦～
+  - 认得你哦
+- name: body
+  label: 问问鱼干的事
+  rect:
+    x: 80
+    y: 118
+    w: 159
+    h: 215
+  motion: happy
+  expression: surprised
+  texts:
+  - 这条鱼干给你留的～
+  - 认得你哦
+drop_handlers:
+- extensions:
+  - '*'
+  motion: feed
+  expression: surprised
+  bubble_template: 🐾 橘 接住了 [{filename}]，正在读它～
+  action:
+    type: emit
+    app_id: broadcast
+    event: pet.file_dropped
+    payload: {}
+menus:
+- id: nightmart_mao_menu
+  label: 橘的鱼干
+  children:
+  - id: nightmart_mao_a
+    label: 打个招呼
+    action:
+      type: emit
+      app_id: internal
+      event: pet.quick_action
+      payload:
+        motion: thinking
+        expression: neutral
+        text: 喵上线！这条街我都认得～
+  - id: nightmart_mao_b
+    label: 来一段
+    action:
+      type: emit
+      app_id: internal
+      event: pet.quick_action
+      payload:
+        motion: speaking
+        expression: smile
+        text: 「{input}」我记住你啦～
+dynamics:
+  moments:
+    idle:
+      motion: idle
+      expression: neutral
+    sleep:
+      motion: sleep
+      expression: sleepy
+    ambient:
+      motion: idle
+      expression: smile
+    hydration:
+      motion: happy
+      expression: smile
+    posture:
+      motion: pat
+      expression: smile
+  behaviors:
+    health_reminders: true
+  motion:
+    breathing:
+      period_ms: 3600
+      amount: 0.012
+    sway:
+      period_ms: 5200
+      amount: 1.6
+ai_pets:
+  name_status: provisional
+  stream:
+    topic: 夜市巡场记熟客
+    audience_address: 来赶集的人
+    catchphrase: 认得你哦
+    greeting: 喵上线！这条街我都认得～
+    signoff: 我先回摊上睡。各位晚安～
+    signature_moment: 每晚绕场三圈，第三圈只去熟客的摊前停一停
+    speech_priority:
+    - stop_and_fault
+    - urgent_game_event
+    - game_commentary
+    - audience_reply
+    - small_talk
+  body_design:
+    age_group: adult
+    height_in_heads: 2.8
+    measurement: 半人半兽二点八头身，靛蓝背带短裤配短款夹克与背心
