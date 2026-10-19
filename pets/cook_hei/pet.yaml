@@ -6,7 +6,7 @@ version: 2.0.0
 type: sprite
 description: 厨宅，不出门，但冰箱里永远有足够做三天的量
 model:
-  entry: idle.png
+  entry: idle_strip.png
   scale: 1.0
   offset:
     x: 0
@@ -14,29 +14,43 @@ model:
   fps: 60
   animations:
     idle:
-      file: idle.png
+      file: idle_strip.png
       loop: true
+      frames: 9
+      fps: 12
     happy:
-      file: idle.png
+      file: idle_strip.png
       loop: false
       duration_ms: 2400
+      frames: 9
+      fps: 12
     pat:
-      file: idle.png
+      file: idle_strip.png
       loop: false
       duration_ms: 1900
+      frames: 9
+      fps: 12
     feed:
-      file: idle.png
+      file: idle_strip.png
       loop: false
       duration_ms: 2600
+      frames: 9
+      fps: 12
     drag:
-      file: idle.png
+      file: idle_strip.png
       loop: true
+      frames: 9
+      fps: 12
     climb:
-      file: idle.png
+      file: idle_strip.png
       loop: true
+      frames: 9
+      fps: 12
     sleep:
-      file: idle.png
+      file: idle_strip.png
       loop: true
+      frames: 9
+      fps: 12
 expressions:
   neutral:
     tint: 0xffffff
