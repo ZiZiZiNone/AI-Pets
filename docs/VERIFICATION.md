@@ -1,6 +1,6 @@
 # Verification report
 
-Generated 2026-10-20 07:24:46 by `npm run verify`. Every number below is captured from a real run of
+Generated 2026-10-20 07:39:39 by `npm run verify`. Every number below is captured from a real run of
 the command shown beside it — regenerate with `npm run verify` to reproduce.
 
 ## 1. PE forensics — release binary
@@ -11,7 +11,7 @@ path as a literal byte sequence inside the image.
 
 | field | value |
 | --- | --- |
-| size on disk | 247,900,921 bytes (236.42 MiB) |
+| size on disk | 257,573,669 bytes (245.64 MiB) |
 | DOS signature | `MZ` |
 | PE signature | `50 45 00 00` |
 | machine | `0x8664` (x86-64) |
@@ -22,7 +22,7 @@ path as a literal byte sequence inside the image.
 | DEP (NX_COMPAT) | yes |
 | HIGH_ENTROPY_VA | yes |
 | sections | `.text` `.data` `.rdata` `.pdata` `.xdata` `.bss` `.idata` `.tls` `.rsrc` `.reloc` |
-| import directory | RVA `0xE31C000`, 39 DLL entries |
+| import directory | RVA `0xEC55000`, 39 DLL entries |
 
 Import table detail:
 
@@ -72,13 +72,13 @@ total imported symbols: **433**
 
 Embedded assets:
 
-dist files: **650** · present in binary as literal asset path: **650** · missing: **0**
+dist files: **652** · present in binary as literal asset path: **652** · missing: **0**
 
 - every dist asset path is embedded in the executable
 
-binary freshness: the executable is newer than all 650 `dist/` files (linked 2026-10-19 23:24:44), so the path table describes this bundle.
+binary freshness: the executable is newer than all 652 `dist/` files (linked 2026-10-19 23:39:37), so the path table describes this bundle.
 
-gzip streams in image: **2134** — asset bodies are stored compressed, so file contents are not greppable as plaintext; the path table above is the reliable indicator.
+gzip streams in image: **2210** — asset bodies are stored compressed, so file contents are not greppable as plaintext; the path table above is the reliable indicator.
 
 ## 2. Working tree vs HEAD
 
@@ -177,46 +177,46 @@ exit code: **0** (0 = no value cycles) — 1 type-only cycle(s) recorded and acc
 Rust unit tests: **106 passed, 0 failed**.
 
 ```
+test action_executor::tests::a_url_panel_carries_its_url ... ok
 test action_executor::tests::a_panel_missing_the_source_its_mode_needs_is_refused_before_anything_opens ... ok
 test action_executor::tests::a_panel_host_failure_is_reported_rather_than_swallowed ... ok
-test action_executor::tests::a_panel_action_carries_its_schema_across_the_boundary ... ok
 test action_executor::tests::a_missing_pets_root_refuses_every_switch_instead_of_succeeding_blindly ... ok
 test action_executor::tests::a_panel_action_without_a_mode_defaults_to_schema ... ok
-test action_executor::tests::a_url_panel_carries_its_url ... ok
+test action_executor::tests::a_panel_action_carries_its_schema_across_the_boundary ... ok
 test action_executor::tests::an_over_long_pet_id_is_refused_by_shape_not_by_length_of_a_list ... ok
 test action_executor::tests::an_unrecognised_panel_mode_is_not_forwarded_as_written ... ok
-test action_executor::tests::a_file_masquerading_as_a_pet_folder_does_not_satisfy_the_switch ... ok
 test action_executor::tests::allowed_emotions_are_accepted ... ok
 test action_executor::tests::unknown_action_id_does_not_deserialize ... ok
-test action_executor::tests::a_folder_without_a_manifest_is_not_a_switchable_pet ... ok
 test action_executor::tests::unknown_action_type_is_dispatched_not_executed ... ok
-test action_executor::tests::emotion_outside_the_whitelist_is_rejected ... ok
-test action_executor::tests::the_rejection_message_escapes_control_characters ... ok
-test action_executor::tests::the_unknown_pet_message_names_the_directory_that_was_searched ... ok
 test action_executor::tests::pomodoro_falls_back_to_twenty_five_minutes ... ok
-test engine_runner::tests::a_glob_matching_nothing_names_the_directory_it_looked_in ... ok
-test engine_runner::tests::a_flag_prefixed_glob_resolves_against_the_value_not_the_whole_argument ... ok
-test action_executor::tests::a_traversal_attempt_cannot_reach_a_sibling_of_the_pets_root ... ok
-test engine_runner::tests::a_non_base64_payload_is_rejected ... ok
+test action_executor::tests::a_file_masquerading_as_a_pet_folder_does_not_satisfy_the_switch ... ok
+test action_executor::tests::a_folder_without_a_manifest_is_not_a_switchable_pet ... ok
+test action_executor::tests::emotion_outside_the_whitelist_is_rejected ... ok
 test action_executor::tests::a_well_shaped_id_with_no_folder_is_refused_with_its_name ... ok
-test engine_runner::tests::a_missing_executable_is_a_readable_error ... ok
-test action_executor::tests::unit_variants_execute ... ok
+test action_executor::tests::the_rejection_message_escapes_control_characters ... ok
+test action_executor::tests::a_traversal_attempt_cannot_reach_a_sibling_of_the_pets_root ... ok
+test action_executor::tests::the_unknown_pet_message_names_the_directory_that_was_searched ... ok
 test action_executor::tests::unknown_pet_is_rejected ... ok
-test engine_runner::tests::an_illegal_capture_extension_is_rejected ... ok
+test engine_runner::tests::a_non_base64_payload_is_rejected ... ok
+test action_executor::tests::unit_variants_execute ... ok
 test engine_runner::tests::an_empty_executable_path_is_rejected_before_spawning ... ok
+test engine_runner::tests::a_glob_matching_nothing_names_the_directory_it_looked_in ... ok
+test engine_runner::tests::an_illegal_capture_extension_is_rejected ... ok
+test engine_runner::tests::a_missing_executable_is_a_readable_error ... ok
+test engine_runner::tests::a_flag_prefixed_glob_resolves_against_the_value_not_the_whole_argument ... ok
 test action_executor::tests::a_pet_added_as_a_folder_is_switched_to_without_a_code_change ... ok
-test action_executor::tests::installed_pets_are_accepted ... ok
-test engine_runner::tests::capturing_output_without_a_placeholder_is_rejected ... ok
 test engine_runner::tests::a_model_glob_never_matches_a_directory ... ok
+test engine_runner::tests::capturing_output_without_a_placeholder_is_rejected ... ok
 test engine_runner::tests::a_model_glob_resolves_to_the_first_file_in_name_order ... ok
 test engine_runner::tests::extension_sanitising_accepts_the_forms_configs_actually_use ... ok
 test engine_runner::tests::mime_types_cover_the_formats_speech_endpoints_return ... ok
+test action_executor::tests::installed_pets_are_accepted ... ok
+test engine_runner::tests::an_engine_that_writes_nothing_is_a_failure_not_silent_success ... ok
 test engine_runner::tests::an_input_payload_becomes_a_readable_file_at_the_placeholder ... ok
-test engine_runner::tests::an_input_placeholder_written_on_disk_is_deleted_after_the_run ... ok
 test engine_runner::tests::oversized_audio_payload_is_rejected ... ok
 test engine_runner::tests::oversized_stdin_is_rejected ... ok
 test engine_runner::tests::placeholder_substitution_touches_only_the_placeholder ... ok
-test engine_runner::tests::an_engine_that_writes_nothing_is_a_failure_not_silent_success ... ok
+test engine_runner::tests::an_input_placeholder_written_on_disk_is_deleted_after_the_run ... ok
 test engine_runner::tests::text_containing_a_star_is_not_treated_as_a_path_pattern ... ok
 test engine_runner::tests::captures_stderr_separately ... ok
 test engine_runner::tests::captures_stdout_and_reports_success ... ok
@@ -225,14 +225,14 @@ test pet_packages::tests::a_bare_directory_is_not_an_installed_package ... ok
 test pet_packages::tests::a_block_sequence_is_read_in_order ... ok
 test pet_packages::tests::a_folder_without_a_manifest_is_not_a_package ... ok
 test pet_packages::tests::a_malformed_list_is_tolerated_rather_than_fatal ... ok
-test engine_runner::tests::empty_output_still_returns_a_result ... ok
-test pet_packages::tests::a_package_is_found_under_any_root ... ok
-test pet_packages::tests::a_quoted_entry_keeps_a_hash_inside_it ... ok
 test pet_packages::tests::a_missing_root_is_skipped_rather_than_fatal ... ok
+test engine_runner::tests::empty_output_still_returns_a_result ... ok
+test pet_packages::tests::a_quoted_entry_keeps_a_hash_inside_it ... ok
 test pet_packages::tests::an_absent_key_yields_nothing ... ok
 test pet_packages::tests::an_empty_inline_list_yields_nothing ... ok
 test pet_packages::tests::an_inline_list_is_read ... ok
 test pet_packages::tests::comments_and_blank_lines_inside_the_list_are_ignored ... ok
+test pet_packages::tests::a_package_is_found_under_any_root ... ok
 test pet_packages::tests::the_bundled_root_leads_and_repeats_are_collapsed ... ok
 test pet_packages::tests::the_list_stops_at_the_next_key ... ok
 test tests::a_bundled_resource_is_looked_for_under_the_up_prefix ... ok
@@ -252,27 +252,27 @@ test win32_window::tests::disabling_removes_mask_bits_the_original_had ... ok
 test win32_window::tests::enabling_is_idempotent ... ok
 test win32_window::tests::enabling_sets_every_bit_in_the_mask ... ok
 test win32_window::tests::round_trip_returns_the_original_style ... ok
-test engine_runner::tests::no_shell_means_metacharacters_are_not_interpreted ... ok
-test ws_server::tests::a_disconnect_releases_only_the_connection_that_held_the_lease ... ok
 test ws_server::tests::a_claim_installs_the_holder_and_reports_the_change_once ... ok
+test ws_server::tests::a_disconnect_releases_only_the_connection_that_held_the_lease ... ok
 test ws_server::tests::a_header_that_is_not_visible_ascii_is_not_trusted ... ok
 test ws_server::tests::a_host_that_merely_starts_with_an_allowed_one_is_rejected ... ok
 test ws_server::tests::a_later_claim_displaces_the_earlier_driver ... ok
+test engine_runner::tests::no_shell_means_metacharacters_are_not_interpreted ... ok
 test ws_server::tests::an_unwritable_candidate_is_absent_from_the_owned_list ... ok
 test ws_server::tests::authorize_accepts_only_the_exact_token ... ok
 test pet_packages::tests::the_first_root_to_claim_an_id_keeps_it ... ok
 test ws_server::tests::authorize_rejects_missing_wrong_and_near_miss_tokens ... ok
+test ws_server::tests::no_writable_candidate_leaves_the_token_unplaced ... ok
 test ws_server::tests::consecutive_tokens_differ ... ok
 test ws_server::tests::only_the_holder_can_release_the_lease ... ok
-test ws_server::tests::no_writable_candidate_leaves_the_token_unplaced ... ok
 test ws_server::tests::the_declared_origins_are_allowed ... ok
 test ws_server::tests::origins_outside_the_declared_set_are_rejected ... ok
-test engine_runner::tests::non_zero_exit_is_reported_not_swallowed ... ok
-test ws_server::tests::a_token_that_cannot_be_written_beside_the_working_directory_moves_on ... ok
 test ws_server::tests::token_does_not_leak_the_process_id ... ok
 test ws_server::tests::token_has_the_documented_shape ... ok
-test ws_server::tests::userinfo_cannot_masquerade_as_a_local_host ... ok
+test ws_server::tests::a_token_that_cannot_be_written_beside_the_working_directory_moves_on ... ok
 test ws_server::tests::tokens_from_two_brokers_are_not_interchangeable ... ok
+test engine_runner::tests::non_zero_exit_is_reported_not_swallowed ... ok
+test ws_server::tests::userinfo_cannot_masquerade_as_a_local_host ... ok
 test ws_server::tests::token_is_written_to_the_supplied_path ... ok
 test ws_server::tests::the_token_is_written_to_every_writable_candidate_not_just_the_first ... ok
 test engine_runner::tests::a_shared_temp_path_is_not_reused_between_calls ... ok
