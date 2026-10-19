@@ -90,8 +90,15 @@ function petAssetsPlugin(): Plugin {
           else fs.copyFileSync(srcPath, destPath);
         }
       };
-      copyRecursive(resolve(__dirname, 'pets'), resolve(__dirname, 'dist/pets'));
-      copyRecursive(resolve(__dirname, 'config'), resolve(__dirname, 'dist/config'));
+      // The bundle mirrors the repository instead of accumulating into it. A package left
+      // over from a character that has since been redrawn would otherwise be embedded in
+      // the release: the roster would not list it, but the retired art would still ship.
+      const mirror = (src: string, dest: string) => {
+        fs.rmSync(dest, { recursive: true, force: true });
+        copyRecursive(src, dest);
+      };
+      mirror(resolve(__dirname, 'pets'), resolve(__dirname, 'dist/pets'));
+      mirror(resolve(__dirname, 'config'), resolve(__dirname, 'dist/config'));
       fs.writeFileSync(
         resolve(__dirname, 'dist/pets/index.json'),
         JSON.stringify(listPetIds()),
