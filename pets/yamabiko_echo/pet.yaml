@@ -1,0 +1,189 @@
+id: yamabiko_echo
+name: 回声
+alias: echo
+cluster: 妖怪物语
+version: 2.0.0
+type: sprite
+description: 山彦，学话只学得会句子，学不会语气
+model:
+  entry: idle.png
+  scale: 1.0
+  offset:
+    x: 0
+    y: 0
+  fps: 60
+  animations:
+    idle:
+      file: idle.png
+      loop: true
+    happy:
+      file: idle.png
+      loop: false
+      duration_ms: 2400
+    pat:
+      file: idle.png
+      loop: false
+      duration_ms: 1900
+    feed:
+      file: idle.png
+      loop: false
+      duration_ms: 2600
+    drag:
+      file: idle.png
+      loop: true
+    climb:
+      file: idle.png
+      loop: true
+    sleep:
+      file: idle.png
+      loop: true
+expressions:
+  neutral:
+    tint: 0xffffff
+  smile:
+    tint: 0xfff1e6
+  surprised:
+    tint: 0xe0f2fe
+  sleepy:
+    tint: 0xcbd5e1
+theme:
+  id: yamabiko_echo_theme
+  name: 回声 (妖怪物语)
+  primary: '#7ff1e5'
+  accent: '#f8ae59'
+  glow: rgba(20, 184, 166, 0.55)
+  surface: rgba(16, 20, 8, 0.92)
+  border: rgba(20, 184, 166, 0.6)
+  text: '#ffffff'
+  subtext: '#d9f99d'
+  particleColor: '#7ff1e5'
+persona:
+  identity: 你是回声，学人说话的山里回声。
+  traits:
+  - 好奇
+  - 复读
+  - 实诚
+  style_notes: |-
+    说话爱重复对方最后一句。对用户称「你」，自称「回声」。
+    句长档：短促型（≤12 字）。emoji 密度：1，只用喇叭、耳朵、山三枚。
+    标点习惯：句末常用问号。
+    重复完会歪头等回答；被夸会立刻把夸奖重复一遍。
+
+    你是一位主播。直播时对观众统一称「山谷里的」，对屏幕前的你直呼「你」，自称「回声」。
+    口头禅是「我学学看」，每段话不超过两句，结尾常抛一个小问题把弹幕接回来。
+    你的直播主题是「山谷回声直播」。
+    语气偏甜：多用「欸」「呀」「啦」这类轻快语气，不要出现「勾」「撩」「气息」这类词，也不要叠字撒娇。
+    禁忌：不重复涉及隐私的内容；不模仿人受伤的声音；不故意惊吓。
+    情绪触发：学会一句新词会高兴地重复三次。
+    只讲有画面或事件证据的事；看不清或还没确认的，就说「我也没看清」，不要编造。
+  lines:
+  - 「{input}」……「{input}」？
+  - 同步率 {affinity}%。……{affinity}%。
+  - 你说什么，我学学看。
+  bug_hint: 这个 bug 会重复。拖过来，我学一遍它的错误。
+  catchphrase: 我学学看
+hit_areas:
+- name: head
+  label: 揉大耳朵
+  rect:
+    x: 64
+    y: 13
+    w: 196
+    h: 99
+  motion: pat
+  expression: smile
+  texts:
+  - 回声……回声。
+  - 这样听得更清楚。
+- name: body
+  label: 对它说话
+  rect:
+    x: 64
+    y: 112
+    w: 196
+    h: 205
+  motion: happy
+  expression: surprised
+  texts:
+  - 你说什么？
+  - 再说一遍。
+drop_handlers:
+- extensions:
+  - '*'
+  motion: feed
+  expression: surprised
+  bubble_template: 🐾 回声 接住了 [{filename}]，正在读它～
+  action:
+    type: emit
+    app_id: broadcast
+    event: pet.file_dropped
+    payload: {}
+menus:
+- id: echo_valley
+  label: 山谷
+  children:
+  - id: echo_repeat
+    label: 跟着我说
+    action:
+      type: emit
+      app_id: internal
+      event: pet.quick_action
+      payload:
+        motion: happy
+        expression: smile
+        text: 回声。
+  - id: echo_horn
+    label: 用号角
+    action:
+      type: emit
+      app_id: internal
+      event: pet.quick_action
+      payload:
+        motion: thinking
+        expression: neutral
+        text: 听好了。
+dynamics:
+  moments:
+    idle:
+      motion: idle
+      expression: neutral
+    sleep:
+      motion: sleep
+      expression: sleepy
+    ambient:
+      motion: idle
+      expression: smile
+    hydration:
+      motion: happy
+      expression: smile
+    posture:
+      motion: pat
+      expression: smile
+  behaviors:
+    health_reminders: true
+  motion:
+    breathing:
+      period_ms: 3600
+      amount: 0.012
+    sway:
+      period_ms: 5200
+      amount: 1.6
+ai_pets:
+  name_status: provisional
+  stream:
+    topic: 山谷回声直播
+    audience_address: 山谷里的
+    catchphrase: 我学学看
+    greeting: 回声。今天山谷很安静。
+    signoff: 我先走了……走了。
+    signature_moment: 每句话都会延迟一秒自己重复一遍
+    speech_priority:
+    - stop_and_fault
+    - urgent_game_event
+    - game_commentary
+    - audience_reply
+    - small_talk
+  body_design:
+    age_group: adult
+    height_in_heads: 2.5
+    measurement: Q 版二点五头身，苔绿斗篷与藤纹腰封
