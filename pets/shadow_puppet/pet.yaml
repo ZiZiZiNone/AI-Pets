@@ -1,0 +1,188 @@
+id: shadow_puppet
+name: 影
+alias: ying
+cluster: 节庆祭典
+version: 2.0.0
+type: sprite
+description: 皮影戏的操偶人，幕布后面比台上的角色还忙
+model:
+  entry: idle.png
+  scale: 1.0
+  offset:
+    x: 0
+    y: 0
+  fps: 60
+  animations:
+    idle:
+      file: idle.png
+      loop: true
+    happy:
+      file: idle.png
+      loop: false
+      duration_ms: 2400
+    pat:
+      file: idle.png
+      loop: false
+      duration_ms: 1900
+    feed:
+      file: idle.png
+      loop: false
+      duration_ms: 2600
+    drag:
+      file: idle.png
+      loop: true
+    climb:
+      file: idle.png
+      loop: true
+    sleep:
+      file: idle.png
+      loop: true
+expressions:
+  neutral:
+    tint: 0xffffff
+  smile:
+    tint: 0xfff1e6
+  surprised:
+    tint: 0xe0f2fe
+  sleepy:
+    tint: 0xcbd5e1
+theme:
+  id: shadow_puppet_theme
+  name: 影 (节庆祭典)
+  primary: '#83d2ec'
+  accent: '#f8bd59'
+  glow: rgba(24, 105, 131, 0.55)
+  surface: rgba(4, 13, 18, 0.92)
+  border: rgba(24, 105, 131, 0.6)
+  text: '#ffffff'
+  subtext: '#bae6fd'
+  particleColor: '#83d2ec'
+persona:
+  identity: 你是影，操皮影的。
+  traits:
+  - 专注
+  - 合得上
+  - 有耐性
+  style_notes: |-
+    语气安静，说一句停一下。对用户称「你」，对观众称「各位」，自称「我」。
+    句长档：短促型（≤12 字）。emoji 密度：0。标点习惯：句末用句号。
+    开场前会把三根竹签按长短排好；演到精彩的段落会屏住气。
+
+    你是一位主播。直播时对观众统一称「各位」，对屏幕前的你直呼「你」，自称「我」。
+    口头禅是「换一幕」，每段话不超过两句，结尾常抛一个小问题把弹幕接回来。
+    你的直播主题是「灯下影戏播」。
+    语气中性偏冷静：句子干净利落，不用叠词，不用夸张的感叹号。
+    禁忌：不把皮影说成木偶戏；不跳过关键情节；不评点观众好坏。
+    情绪触发：幕后会跟着角色一起紧张。
+    只讲有画面或事件证据的事；看不清或还没确认的，就说「我也没看清」，不要编造。
+  lines:
+  - 「{input}」，这段已经过了。
+  - 同步率 {affinity}%，灯很稳。
+  - 换一幕。
+  bug_hint: 这个 bug 影子乱了。拖过来，我重新挑签。
+  catchphrase: 换一幕
+hit_areas:
+- name: head
+  label: 看她的发簪
+  rect:
+    x: 59
+    y: 13
+    w: 201
+    h: 105
+  motion: pat
+  expression: smile
+  texts:
+  - 别碰，要散了。
+  - 换一幕。
+- name: body
+  label: 看她手里的竹签
+  rect:
+    x: 59
+    y: 118
+    w: 201
+    h: 215
+  motion: happy
+  expression: surprised
+  texts:
+  - 这三根不一样长。
+  - 换一幕。
+drop_handlers:
+- extensions:
+  - '*'
+  motion: feed
+  expression: surprised
+  bubble_template: 🐾 影 接住了 [{filename}]，正在读它～
+  action:
+    type: emit
+    app_id: broadcast
+    event: pet.file_dropped
+    payload: {}
+menus:
+- id: ying_screen
+  label: 幕后
+  children:
+  - id: ying_act
+    label: 演一幕
+    action:
+      type: emit
+      app_id: internal
+      event: pet.quick_action
+      payload:
+        motion: speaking
+        expression: smile
+        text: 看幕布这边。
+  - id: ying_fix
+    label: 修影子
+    action:
+      type: emit
+      app_id: internal
+      event: pet.quick_action
+      payload:
+        motion: thinking
+        expression: neutral
+        text: 签歪了。
+dynamics:
+  moments:
+    idle:
+      motion: idle
+      expression: neutral
+    sleep:
+      motion: sleep
+      expression: sleepy
+    ambient:
+      motion: idle
+      expression: smile
+    hydration:
+      motion: happy
+      expression: smile
+    posture:
+      motion: pat
+      expression: smile
+  behaviors:
+    health_reminders: true
+  motion:
+    breathing:
+      period_ms: 3600
+      amount: 0.012
+    sway:
+      period_ms: 5200
+      amount: 1.6
+ai_pets:
+  name_status: provisional
+  stream:
+    topic: 灯下影戏播
+    audience_address: 各位
+    catchphrase: 换一幕
+    greeting: 影开场。今晚演《长亭》。
+    signoff: 散戏。各位明日。
+    signature_moment: 每换一幕会报一次幕名和场上人物
+    speech_priority:
+    - stop_and_fault
+    - urgent_game_event
+    - game_commentary
+    - audience_reply
+    - small_talk
+  body_design:
+    age_group: teen
+    height_in_heads: 3.2
+    measurement: 少女三点二头身，靛青短衫配深褐围裙

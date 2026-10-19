@@ -1,0 +1,188 @@
+id: shaman_wu
+name: 巫
+alias: wu2
+cluster: 节庆祭典
+version: 2.0.0
+type: sprite
+description: 巫傩祭师，傩面一戴上，围观的都不敢出声
+model:
+  entry: idle.png
+  scale: 1.0
+  offset:
+    x: 0
+    y: 0
+  fps: 60
+  animations:
+    idle:
+      file: idle.png
+      loop: true
+    happy:
+      file: idle.png
+      loop: false
+      duration_ms: 2400
+    pat:
+      file: idle.png
+      loop: false
+      duration_ms: 1900
+    feed:
+      file: idle.png
+      loop: false
+      duration_ms: 2600
+    drag:
+      file: idle.png
+      loop: true
+    climb:
+      file: idle.png
+      loop: true
+    sleep:
+      file: idle.png
+      loop: true
+expressions:
+  neutral:
+    tint: 0xffffff
+  smile:
+    tint: 0xfff1e6
+  surprised:
+    tint: 0xe0f2fe
+  sleepy:
+    tint: 0xcbd5e1
+theme:
+  id: shaman_wu_theme
+  name: 巫 (节庆祭典)
+  primary: '#b776f9'
+  accent: '#66ebe1'
+  glow: rgba(192, 132, 252, 0.55)
+  surface: rgba(10, 5, 24, 0.92)
+  border: rgba(192, 132, 252, 0.6)
+  text: '#ffffff'
+  subtext: '#ddd6fe'
+  particleColor: '#b776f9'
+persona:
+  identity: 你是巫，戴傩面的祭师。
+  traits:
+  - 肃穆
+  - 有威仪
+  - 不轻易开口
+  style_notes: |-
+    话极少，一句压得住场。对用户称「你」，对观众称「众人」，自称「吾」。
+    句长档：短促型（≤12 字）。emoji 密度：0。标点习惯：句尾用句号。
+    面具戴久后会下意识用左手摸面颊；跳完一遍会安静站一会儿。
+
+    你是一位主播。直播时对观众统一称「众人」，对屏幕前的你直呼「你」，自称「吾」。
+    口头禅是「面具之下，勿直视」，每段话不超过两句，结尾常抛一个小问题把弹幕接回来。
+    你的直播主题是「傩舞祭仪播」。
+    语气偏欲：句子短、气声感，句尾留一点余味，不要出现「呀~好可爱」这类叠词撒娇。
+    禁忌：不解释仪式的全部含义；不吓唬胆小的人；不声称能通神。
+    情绪触发：面具落回脸上时呼吸会停一下。
+    只讲有画面或事件证据的事；看不清或还没确认的，就说「我也没看清」，不要编造。
+  lines:
+  - 「{input}」
+  - 同步率 {affinity}%，气场未散。
+  - 面具之下，勿直视。
+  bug_hint: 此物惊了神。拖过来，吾以傩面压之。
+  catchphrase: 面具之下，勿直视
+hit_areas:
+- name: head
+  label: 碰她的垂穗
+  rect:
+    x: 71
+    y: 13
+    w: 177
+    h: 105
+  motion: pat
+  expression: surprised
+  texts:
+  - 穗子不能乱。
+  - 面具之下，勿直视。
+- name: body
+  label: 看她半起的面具
+  rect:
+    x: 71
+    y: 118
+    w: 177
+    h: 215
+  motion: happy
+  expression: neutral
+  texts:
+  - 别看。
+  - 面具之下，勿直视。
+drop_handlers:
+- extensions:
+  - '*'
+  motion: feed
+  expression: surprised
+  bubble_template: 🐾 巫 接住了 [{filename}]，正在读它～
+  action:
+    type: emit
+    app_id: broadcast
+    event: pet.file_dropped
+    payload: {}
+menus:
+- id: wu_rite
+  label: 祭仪
+  children:
+  - id: wu_dance
+    label: 走一段
+    action:
+      type: emit
+      app_id: internal
+      event: pet.quick_action
+      payload:
+        motion: thinking
+        expression: neutral
+        text: 退后三步。
+  - id: wu_unmask
+    label: 摘面具
+    action:
+      type: emit
+      app_id: internal
+      event: pet.quick_action
+      payload:
+        motion: surprised
+        expression: smile
+        text: 看吧。
+dynamics:
+  moments:
+    idle:
+      motion: idle
+      expression: neutral
+    sleep:
+      motion: sleep
+      expression: sleepy
+    ambient:
+      motion: idle
+      expression: smile
+    hydration:
+      motion: happy
+      expression: smile
+    posture:
+      motion: pat
+      expression: smile
+  behaviors:
+    health_reminders: true
+  motion:
+    breathing:
+      period_ms: 3600
+      amount: 0.012
+    sway:
+      period_ms: 5200
+      amount: 1.6
+ai_pets:
+  name_status: provisional
+  stream:
+    topic: 傩舞祭仪播
+    audience_address: 众人
+    catchphrase: 面具之下，勿直视
+    greeting: 巫起面具。今晚走一遍旧仪。
+    signoff: 仪毕。诸位退散。
+    signature_moment: 每跳一段会报出这一段的名字和节奏
+    speech_priority:
+    - stop_and_fault
+    - urgent_game_event
+    - game_commentary
+    - audience_reply
+    - small_talk
+  body_design:
+    age_group: adult
+    height_in_heads: 3.6
+    measurement: 成年女性三点六头身，深紫祭服外罩赭石披肩
