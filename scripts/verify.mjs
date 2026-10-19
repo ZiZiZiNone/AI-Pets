@@ -35,8 +35,10 @@ const npm = (...args) =>
   sh('npm.cmd', args, { stdio: ['ignore', 'pipe', 'pipe'], shell: true });
 
 // Local time, not UTC: a report that says it was written eight hours before it was
-// written is a report nobody can trust.
-const now = new Date().toLocaleString('sv-SE', { hour12: false }).replace('T', ' ');
+// written is a report nobody can trust. The same has to hold for the timestamps the
+// report quotes from the build, or the binary looks eight hours older than it is.
+const ts = (ms) => new Date(ms).toLocaleString('sv-SE', { hour12: false }).replace('T', ' ');
+const now = ts(Date.now());
 const sections = [];
 const push = (title, body) => sections.push(`## ${title}\n\n${body}\n`);
 
@@ -135,7 +137,6 @@ function peForensics() {
     newerThanBinary.sort((x, y) => y.mtimeMs - x.mtimeMs);
   }
   const stale = newerThanBinary.length > 0;
-  const ts = (ms) => new Date(ms).toISOString().replace('T', ' ').slice(0, 19);
 
   let gzipStreams = 0;
   for (let i = 0; i < b.length - 1; i++) {
