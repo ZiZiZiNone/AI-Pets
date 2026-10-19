@@ -34,7 +34,9 @@ const git = (...args) => sh('git', args);
 const npm = (...args) =>
   sh('npm.cmd', args, { stdio: ['ignore', 'pipe', 'pipe'], shell: true });
 
-const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
+// Local time, not UTC: a report that says it was written eight hours before it was
+// written is a report nobody can trust.
+const now = new Date().toLocaleString('sv-SE', { hour12: false }).replace('T', ' ');
 const sections = [];
 const push = (title, body) => sections.push(`## ${title}\n\n${body}\n`);
 
