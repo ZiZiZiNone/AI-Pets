@@ -414,6 +414,11 @@ onMounted(async () => {
       )
     );
     unlistenFns.push(
+      await listen<{ attached: boolean; app_id?: string | null }>('pet-driver-changed', (ev) =>
+        petStore.setExternalDriver(ev.payload?.attached ? ev.payload.app_id || 'external' : null)
+      )
+    );
+    unlistenFns.push(
       await listen<{ event: string; payload: Record<string, unknown> }>(
         'internal-menu-action',
         (ev) => void petStore.handleInternalEvent(ev.payload.event, ev.payload.payload || {})

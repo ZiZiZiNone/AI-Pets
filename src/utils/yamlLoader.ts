@@ -13,13 +13,6 @@ import type {
 } from '@/types/pet';
 import { normalizeMenuInteraction } from '@/utils/menuInteraction';
 
-const BUILTIN_PET_IDS = [
-  'aether_mecha_core',
-  'nyx_abyssal_familiar',
-  'pulse_glitch_phantom',
-  'demo_sprite_pet',
-] as const;
-
 /**
  * Default argv for the local engine, written against sherpa-onnx's non-streaming TTS.
  *
@@ -127,7 +120,10 @@ export const DEFAULT_HOST_SETTINGS: HostSettings = {
   host: {
     ws_port_range: [9527, 9537],
     heartbeat_timeout_sec: 45,
-    default_pet: 'aether_mecha_core',
+    default_pet: 'silverfeather_chibi',
+    // Empty rather than absent: a `pets_dirs` of nothing is a statement the host is making
+    // about itself, and saving the file then says so instead of quietly dropping the key.
+    pets_dirs: [],
   },
   render: {
     idle_fps: 24,
@@ -156,11 +152,11 @@ export const DEFAULT_HOST_SETTINGS: HostSettings = {
 };
 
 export const FALLBACK_PET_MANIFEST: PetManifest = {
-  id: 'aether_mecha_core',
-  name: 'AETHER-VII 战术浮游核心',
+  id: 'fallback_pet',
+  name: '未加载的机体',
   version: '2.0.0',
   type: 'sprite',
-  description: '搭载双轨陀螺仪星环、等离子追踪视觉与反重力浮游翼的战术机甲核心',
+  description: '清单缺失或无法解析时的占位角色，不属于任何一只宠物',
   model: {
     entry: 'idle.svg',
     scale: 1.0,
@@ -168,38 +164,12 @@ export const FALLBACK_PET_MANIFEST: PetManifest = {
     fps: 60,
     animations: {
       idle: { file: 'idle.svg', loop: true },
-      happy: { file: 'idle.svg', loop: false, duration_ms: 2400 },
-      pat: { file: 'idle.svg', loop: false, duration_ms: 1900 },
-      feed: { file: 'idle.svg', loop: false, duration_ms: 2600 },
-      drag: { file: 'idle.svg', loop: true },
-      climb: { file: 'idle.svg', loop: true },
-      sleep: { file: 'idle.svg', loop: true },
     },
   },
   expressions: {
     neutral: { tint: 0xffffff },
-    smile: { tint: 0xa5f3fc },
-    surprised: { tint: 0xfda4af },
-    sleepy: { tint: 0x94a3b8 },
   },
-  hit_areas: [
-    {
-      name: 'head',
-      label: '头部传感器',
-      rect: { x: 80, y: 28, w: 160, h: 118 },
-      motion: 'pat',
-      expression: 'smile',
-      texts: ['光学传感器校准完毕，随时准备接管外部进程流。'],
-    },
-    {
-      name: 'body',
-      label: '核心反应堆',
-      rect: { x: 84, y: 148, w: 152, h: 125 },
-      motion: 'happy',
-      expression: 'surprised',
-      texts: ['核心反应堆运转正常！右键展开战术星盘下达指令。'],
-    },
-  ],
+  hit_areas: [],
   drop_handlers: [],
   menus: [],
 };
@@ -233,7 +203,40 @@ function parsePetThemeYaml(rawTheme: unknown): PetManifest['theme'] {
   return Object.keys(picked).length > 0 ? (picked as PetManifest['theme']) : undefined;
 }
 
-const PERSONA_LIST_KEYS = ['traits'] as const;
+const PERSONA_LIST_KEYS = ['traits', 'lines'] as const;
+
+/**
+ * The clip table, read defensively.
+ *
+ * A clip names a file and may say how many frames that file holds, which is how a pet
+ * brings its own animation: a browser only ever draws the first frame of an animated
+ * picture into a canvas, so the frames have to arrive as one strip. Unknown keys and
+ * unusable numbers are dropped rather than carried into the renderer.
+ */
+function parseAnimationsYaml(raw: unknown): PetManifest['model']['animations'] {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const clips: NonNullable<PetManifest['model']['animations']> = {};
+
+  for (const [name, value] of Object.entries(raw as Record<string, unknown>)) {
+    const source = asRecord(value);
+    const file = typeof source.file === 'string' ? source.file.trim() : '';
+    if (!file) continue;
+    const clip: NonNullable<PetManifest['model']['animations']>[string] = { file };
+    if (typeof source.loop === 'boolean') clip.loop = source.loop;
+    if (typeof source.duration_ms === 'number' && Number.isFinite(source.duration_ms)) {
+      clip.duration_ms = source.duration_ms;
+    }
+    if (typeof source.fps === 'number' && Number.isFinite(source.fps) && source.fps > 0) {
+      clip.fps = source.fps;
+    }
+    if (typeof source.frames === 'number' && Number.isFinite(source.frames) && source.frames >= 1) {
+      clip.frames = Math.floor(source.frames);
+    }
+    clips[name] = clip;
+  }
+
+  return Object.keys(clips).length > 0 ? clips : undefined;
+}
 
 /**
  * Pull the optional personality block out of a manifest.
@@ -247,7 +250,7 @@ function parsePetPersonaYaml(rawPersona: unknown): PetManifest['persona'] {
   const source = rawPersona as Record<string, unknown>;
   const picked: Record<string, unknown> = {};
 
-  for (const key of ['identity', 'style_notes', 'system_prompt'] as const) {
+  for (const key of ['identity', 'style_notes', 'system_prompt', 'bug_hint', 'catchphrase'] as const) {
     const value = source[key];
     if (typeof value === 'string' && value.trim()) picked[key] = value.trim();
   }
@@ -262,8 +265,64 @@ function parsePetPersonaYaml(rawPersona: unknown): PetManifest['persona'] {
   return Object.keys(picked).length > 0 ? (picked as PetManifest['persona']) : undefined;
 }
 
-export function parsePetManifestYaml(rawText: string, fallbackId = 'aether_mecha_core'): PetManifest {
-  try {
+/**
+ * A pet's own mapping from host moments onto its clips.
+ *
+ * Only known keys, only strings — the same defensive shape as the theme and persona: a
+ * malformed block must leave the pet running on the host's default names rather than take
+ * the loop down or silently point at a clip that does not exist.
+ */
+function parsePetDynamicsYaml(rawDynamics: unknown): PetManifest['dynamics'] {
+  const record = asRecord(rawDynamics);
+  const rawMoments = asRecord(record.moments);
+  const moments: Record<string, { motion?: string; expression?: string }> = {};
+
+  for (const [name, value] of Object.entries(rawMoments)) {
+    const source = asRecord(value);
+    const moment: { motion?: string; expression?: string } = {};
+    if (typeof source.motion === 'string' && source.motion.trim()) {
+      moment.motion = source.motion.trim();
+    }
+    if (typeof source.expression === 'string' && source.expression.trim()) {
+      moment.expression = source.expression.trim();
+    }
+    if (Object.keys(moment).length > 0) moments[name] = moment;
+  }
+
+  const behaviors = asRecord(record.behaviors);
+  const healthReminders = behaviors.health_reminders;
+  const parsed: PetManifest['dynamics'] = {};
+  if (Object.keys(moments).length > 0) parsed.moments = moments;
+  const motion = parseProceduralMotionYaml(record.motion);
+  if (motion) parsed.motion = motion;
+  if (typeof healthReminders === 'boolean') parsed.behaviors = { health_reminders: healthReminders };
+  return Object.keys(parsed).length > 0 ? parsed : undefined;
+}
+
+/** The two procedural idle knobs, each kept only when it carries a usable number. */
+function parseProceduralMotionYaml(
+  rawMotion: unknown
+): NonNullable<PetManifest['dynamics']>['motion'] {
+  const record = asRecord(rawMotion);
+  const motion: {
+    breathing?: { period_ms?: number; amount?: number };
+    sway?: { period_ms?: number; amount?: number };
+  } = {};
+  for (const key of ['breathing', 'sway'] as const) {
+    const source = asRecord(record[key]);
+    const knob: { period_ms?: number; amount?: number } = {};
+    if (typeof source.period_ms === 'number' && Number.isFinite(source.period_ms)) {
+      knob.period_ms = source.period_ms;
+    }
+    if (typeof source.amount === 'number' && Number.isFinite(source.amount)) {
+      knob.amount = source.amount;
+    }
+    if (Object.keys(knob).length > 0) motion[key] = knob;
+  }
+  return Object.keys(motion).length > 0 ? motion : undefined;
+}
+
+export function parsePetManifestYaml(rawText: string, fallbackId = 'unknown_pet'): PetManifest {  try {
     const raw = (yaml.load(rawText) || {}) as Record<string, unknown>;
     const id = typeof raw.id === 'string' && raw.id.trim() ? raw.id.trim() : fallbackId;
     const rawModel = (raw.model || {}) as Record<string, unknown>;
@@ -277,6 +336,8 @@ export function parsePetManifestYaml(rawText: string, fallbackId = 'aether_mecha
       version: typeof raw.version === 'string' ? raw.version : '2.0.0',
       type: validTypes.includes(typeVal) ? typeVal : 'sprite',
       description: typeof raw.description === 'string' ? raw.description : '',
+      alias: typeof raw.alias === 'string' && raw.alias.trim() ? raw.alias.trim() : undefined,
+      cluster: typeof raw.cluster === 'string' && raw.cluster.trim() ? raw.cluster.trim() : undefined,
       persona: parsePetPersonaYaml(raw.persona),
       voice: normalizePetVoiceDef(raw.voice),
       menu_interaction: normalizeMenuInteraction(raw.menu_interaction),
@@ -292,8 +353,7 @@ export function parsePetManifestYaml(rawText: string, fallbackId = 'aether_mecha
         },
         fps: typeof rawModel.fps === 'number' ? rawModel.fps : 60,
         animations:
-          (rawModel.animations as PetManifest['model']['animations']) ||
-          FALLBACK_PET_MANIFEST.model.animations,
+          parseAnimationsYaml(rawModel.animations) || FALLBACK_PET_MANIFEST.model.animations,
       },
       expressions:
         (raw.expressions as PetManifest['expressions']) || FALLBACK_PET_MANIFEST.expressions,
@@ -307,6 +367,8 @@ export function parsePetManifestYaml(rawText: string, fallbackId = 'aether_mecha
         ? (raw.drop_handlers as PetManifest['drop_handlers'])
         : [],
       menus: Array.isArray(raw.menus) ? (raw.menus as PetManifest['menus']) : [],
+      dynamics: parsePetDynamicsYaml(raw.dynamics),
+      extensions: pickUninterpretedKeys(raw),
     };
   } catch {
     return { ...structuredClone(FALLBACK_PET_MANIFEST), id: fallbackId };
@@ -314,8 +376,41 @@ export function parsePetManifestYaml(rawText: string, fallbackId = 'aether_mecha
 }
 
 export function serializePetManifestYaml(manifest: PetManifest): string {
-  const { basePath: _, ...cleanCopy } = manifest;
-  return yaml.dump(cleanCopy, { indent: 2, lineWidth: 100, noRefs: true });
+  const { basePath: _, extensions, ...cleanCopy } = manifest;
+  // Written back after the known keys so a package carrying declarations for another host
+  // survives a save here, rather than being silently trimmed to what this host understands.
+  const merged = extensions ? { ...cleanCopy, ...extensions } : cleanCopy;
+  return yaml.dump(merged, { indent: 2, lineWidth: 100, noRefs: true });
+}
+
+/** Every top-level key the host has no meaning for, kept so a save cannot delete it. */
+const INTERPRETED_PET_KEYS = new Set([
+  'id',
+  'name',
+  'version',
+  'type',
+  'adapter',
+  'description',
+  'alias',
+  'cluster',
+  'persona',
+  'voice',
+  'menu_interaction',
+  'model',
+  'expressions',
+  'theme',
+  'hit_areas',
+  'drop_handlers',
+  'menus',
+  'dynamics',
+]);
+
+function pickUninterpretedKeys(raw: Record<string, unknown>): Record<string, unknown> | undefined {
+  const kept: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (!INTERPRETED_PET_KEYS.has(key)) kept[key] = value;
+  }
+  return Object.keys(kept).length > 0 ? kept : undefined;
 }
 
 type UnknownRecord = Record<string, unknown>;
@@ -518,7 +613,20 @@ export async function fetchWebFallbackBundle(): Promise<{
   }
 
   const pets: PetManifest[] = [];
-  for (const pid of BUILTIN_PET_IDS) {
+  // The roster is read from an index the build writes, not from a list of ids kept in
+  // source: a pet dropped into `pets/` has to show up without anyone editing this file.
+  let petIds: string[] = [];
+  try {
+    const indexRes = await fetch('/pets/index.json');
+    if (indexRes.ok) {
+      const parsed = await indexRes.json();
+      if (Array.isArray(parsed)) petIds = parsed.filter((v): v is string => typeof v === 'string');
+    }
+  } catch {
+    // No index (an old build, or a static host that does not serve it): fall through to
+    // the placeholder below.
+  }
+  for (const pid of petIds) {
     try {
       const res = await fetch(`/pets/${pid}/pet.yaml`);
       if (res.ok) pets.push(parsePetManifestYaml(await res.text(), pid));

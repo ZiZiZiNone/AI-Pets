@@ -1,7 +1,14 @@
 host:
   ws_port_range: [9527, 9537]
   heartbeat_timeout_sec: 45
-  default_pet: "aether_mecha_core"
+  default_pet: "silverfeather_chibi"
+  # 额外的宠物包目录。每个目录下每个子文件夹是一个包（<id>/pet.yaml），与仓库自带的
+  # pets/ 同等对待：自带目录排在前面，先到先得，同名时以自带的那份为准。
+  # 留空即只用自带宠物——全新安装不配置任何东西也照常工作。
+  # 这里声明的只是"从哪里读包"，不声明谁生成它们：同一份包可以由本项目的工具导出，
+  # 也可以来自任何一个别的宠物宿主，两者之间没有依赖关系。
+  # 路径建议用正斜杠，或用单引号包起来，避免 YAML 把反斜杠当成转义符。
+  pets_dirs: []
 
 render:
   idle_fps: 24

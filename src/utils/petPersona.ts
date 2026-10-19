@@ -25,6 +25,7 @@ function composePersonaBody(persona: PetPersonaDef): string[] {
   if (persona.identity) lines.push(persona.identity.trim());
   const traits = persona.traits?.filter((t) => t.trim().length > 0) ?? [];
   if (traits.length > 0) lines.push(`性格：${traits.join('、')}。`);
+  if (persona.catchphrase) lines.push(`口头禅：「${persona.catchphrase.trim()}」。`);
   if (persona.style_notes) lines.push(persona.style_notes.trim());
   return lines;
 }

@@ -6,11 +6,9 @@ import {
   COMMAND_MESSAGES,
   DEFAULT_BREAK_LABEL,
   DEFAULT_FOCUS_LABEL,
-  DEFAULT_PERSONA_ID,
   FORTUNE_POOL,
+  GENERIC_PERSONA_POOL,
   PERSONA_MESSAGES,
-  PERSONA_POOLS,
-  PET_ALIASES,
 } from '@/constants/messages';
 import { buildPetSystemPrompt } from '@/utils/petPersona';
 import {
@@ -144,7 +142,6 @@ export function generatePersonaDialogue(
   stats: PetStatsState
 ): string {
   const lower = input.toLowerCase();
-  const petId = pet?.id || DEFAULT_PERSONA_ID;
   const nowStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
   if (lower.includes('时间') || lower.includes('几点') || lower.includes('time')) {
@@ -164,10 +161,13 @@ export function generatePersonaDialogue(
     return PERSONA_MESSAGES.tired;
   }
   if (lower.includes('bug') || lower.includes('报错') || lower.includes('调试')) {
-    return PERSONA_MESSAGES.bugHint(petId);
+    return PERSONA_MESSAGES.bugHint(pet?.persona?.bug_hint);
   }
 
-  return pickFromPool(PERSONA_POOLS[petId] || PERSONA_POOLS[DEFAULT_PERSONA_ID], input, stats.affinity);
+  // The pet's own lines, taken from its package. A pet that declares none falls back to
+  // the host's characterless pool rather than borrowing another pet's voice.
+  const ownLines = pet?.persona?.lines;
+  return pickFromPool(ownLines && ownLines.length > 0 ? ownLines : GENERIC_PERSONA_POOL, input, stats.affinity);
 }
 
 /**
@@ -398,9 +398,17 @@ async function runSlashCommand(
       if (argString) announceCalc(petStore, argString);
       return true;
 
-    case 'pet':
-      petStore.switchPetById(PET_ALIASES[argString.toLowerCase()] || argString);
+    case 'pet': {
+      // The short name a pet answers to is declared in its own package (`alias`), so a
+      // hundred pets can each have one without this file knowing any of them.
+      const wanted = argString.toLowerCase();
+      const target =
+        petStore.availablePets.find((p) => (p.alias || '').toLowerCase() === wanted)?.id ??
+        petStore.availablePets.find((p) => p.id.toLowerCase() === wanted)?.id ??
+        argString;
+      petStore.switchPetById(target);
       return true;
+    }
 
     case 'reset': {
       const cleared = petStore.clearLlmHistory(petStore.currentPet?.id ?? '');

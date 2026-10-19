@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::path::PathBuf;
 use std::process::Command;
+
+use crate::pet_packages;
 
 /// Longest identifier accepted for a pet folder name.
 pub const MAX_PET_ID_LEN: usize = 64;
@@ -43,27 +45,34 @@ pub fn validate_pet_id(pet_id: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Refuse a switch to a pet that is not installed, naming the id and the directory searched.
+/// Refuse a switch to a pet that is not installed, naming the id and every directory searched.
 ///
-/// The id has already passed [`validate_pet_id`], so joining it cannot escape `pets_dir`:
+/// The id has already passed [`validate_pet_id`], so joining it cannot escape any root:
 /// no separators, no `..`, no leading or trailing space. What is left to decide is whether
 /// a pet of that name is actually there, and the answer has to reach the caller as an error.
 /// Returning success for an unknown id moved the failure to the interface, where a missing
 /// pet was reported as nothing at all — the menu item looked inert rather than wrong.
 ///
-/// "There" means `<pets_dir>/<id>/pet.yaml` exists, which is the same predicate
-/// `load_host_configs` uses to build the list the interface can switch between. A bare
-/// directory is not enough: it would pass a weaker check here and still be unswitchable,
-/// which is the same false success in a smaller costume.
-pub fn ensure_pet_installed(pets_dir: &Path, pet_id: &str) -> Result<(), String> {
-    if pets_dir.join(pet_id).join("pet.yaml").is_file() {
+/// "There" means `<root>/<id>/pet.yaml` exists under one of `roots`, which is the same
+/// predicate `load_host_configs` uses to build the list the interface can switch between.
+/// A bare directory is not enough: it would pass a weaker check here and still be
+/// unswitchable, which is the same false success in a smaller costume. The roots are
+/// plural because a package may live outside the folder the host ships with; the error
+/// lists all of them, since "unknown pet" without the paths it looked in is the version
+/// that costs an hour.
+pub fn ensure_pet_installed(roots: &[PathBuf], pet_id: &str) -> Result<(), String> {
+    if pet_packages::find_package_dir(roots, pet_id).is_some() {
         return Ok(());
     }
+    let searched: Vec<String> = roots
+        .iter()
+        .map(|root| root.display().to_string())
+        .collect();
     Err(format!(
         "Unknown pet_id '{}': no pet folder named that under {} \
          (a pet folder is <id>/pet.yaml)",
         pet_id.escape_debug(),
-        pets_dir.display()
+        searched.join(", ")
     ))
 }
 
@@ -152,12 +161,12 @@ impl PanelRequest {
 
 /// Run an action that a client may request over the bus.
 ///
-/// `pets_dir` is the resolved `pets/` root — the directory the interface loads pet folders
+/// `pet_roots` is the resolved search path — the directories the interface loads pet folders
 /// from — so a switch can be judged against what is actually installed rather than against
 /// a list compiled into the binary.
 pub fn execute_whitelisted_action(
     cmd: &SafeActionCommand,
-    pets_dir: &Path,
+    pet_roots: &[PathBuf],
 ) -> Result<String, String> {
     match cmd {
         SafeActionCommand::OpenCompanion => Ok("action:open_companion".into()),
@@ -183,7 +192,7 @@ pub fn execute_whitelisted_action(
         }
         SafeActionCommand::SwitchPet { pet_id } => {
             validate_pet_id(pet_id)?;
-            ensure_pet_installed(pets_dir, pet_id)?;
+            ensure_pet_installed(pet_roots, pet_id)?;
             Ok(format!("pet:{}", pet_id))
         }
         SafeActionCommand::OpenOfficialDocs => {
@@ -299,7 +308,7 @@ fn build_command_with_python_fallback(program: &str, args: &[String]) -> Command
 mod tests {
     use super::*;
     use std::fs;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     static TEMP_SEQ: AtomicUsize = AtomicUsize::new(0);
@@ -360,10 +369,11 @@ mod tests {
         }
     }
 
+    /// Single-root searches, which is what most of these cases are about.
     fn switch(pets_dir: &Path, pet_id: &str) -> Result<String, String> {
         execute_whitelisted_action(
             &cmd_with("switch_pet", serde_json::json!({ "pet_id": pet_id })),
-            pets_dir,
+            std::slice::from_ref(&pets_dir.to_path_buf()),
         )
     }
 
@@ -382,7 +392,7 @@ mod tests {
                 continue; // opens a browser; covered by its own side-effecting path
             }
             assert_eq!(
-                execute_whitelisted_action(&cmd(name), &pets.path).unwrap(),
+                execute_whitelisted_action(&cmd(name), std::slice::from_ref(&pets.path)).unwrap(),
                 expected
             );
         }
@@ -405,7 +415,7 @@ mod tests {
         ] {
             let action = cmd_with("switch_emotion", serde_json::json!({ "emotion": emotion }));
             assert_eq!(
-                execute_whitelisted_action(&action, &pets.path).unwrap(),
+                execute_whitelisted_action(&action, std::slice::from_ref(&pets.path)).unwrap(),
                 format!("emotion:{emotion}")
             );
         }
@@ -418,7 +428,8 @@ mod tests {
         let pets = PetsRoot::with(&[]);
         for emotion in ["", "HAPPY", "neutral; rm -rf /", "happy\nhappy"] {
             let action = cmd_with("switch_emotion", serde_json::json!({ "emotion": emotion }));
-            let err = execute_whitelisted_action(&action, &pets.path).unwrap_err();
+            let err =
+                execute_whitelisted_action(&action, std::slice::from_ref(&pets.path)).unwrap_err();
             assert!(
                 err.starts_with("Disallowed emotion identifier"),
                 "unexpected error for {emotion:?}: {err}"
@@ -428,18 +439,8 @@ mod tests {
 
     #[test]
     fn installed_pets_are_accepted() {
-        let pets = PetsRoot::with(&[
-            "aether_mecha_core",
-            "demo_sprite_pet",
-            "nyx_abyssal_familiar",
-            "pulse_glitch_phantom",
-        ]);
-        for pet in [
-            "aether_mecha_core",
-            "demo_sprite_pet",
-            "nyx_abyssal_familiar",
-            "pulse_glitch_phantom",
-        ] {
+        let pets = PetsRoot::with(&["silverfeather_chibi", "sakura_rin", "guanlan", "qilin_ling"]);
+        for pet in ["silverfeather_chibi", "sakura_rin", "guanlan", "qilin_ling"] {
             assert_eq!(
                 switch(&pets.path, pet).unwrap(),
                 format!("pet:{pet}"),
@@ -465,17 +466,11 @@ mod tests {
 
     #[test]
     fn a_well_shaped_id_with_no_folder_is_refused_with_its_name() {
-        // The old hardcoded list accepted these four whatever the disk said. A shape check
-        // alone would accept them too, and `petStore.switchPetById` would then drop the
-        // request silently, leaving the interface to report success for nothing.
+        // A shape check alone would accept a plausible id, and `petStore.switchPetById`
+        // would then drop the request silently, leaving the interface to report success
+        // for nothing.
         let pets = PetsRoot::with(&["silverfeather_chibi"]);
-        for pet in [
-            "aether_mecha_core",
-            "demo_sprite_pet",
-            "nyx_abyssal_familiar",
-            "pulse_glitch_phantom",
-            "ghost_pet",
-        ] {
+        for pet in ["ghost_pet", "no_such_pet", "pet_from_another_machine"] {
             let error = switch(&pets.path, pet).unwrap_err();
             assert!(
                 error.starts_with(&format!("Unknown pet_id '{pet}'")),
@@ -544,16 +539,15 @@ mod tests {
 
     #[test]
     fn unknown_pet_is_rejected() {
-        // `AETHER_MECHA_CORE` used to be on this list and is now accepted: it is a valid
-        // folder name, and refusing it protected nothing. What must stay refused is
-        // anything that could escape the pets directory or smuggle in a second path.
+        // What must stay refused is anything that could escape the pets directory or
+        // smuggle in a second path.
         let pets = PetsRoot::with(&[]);
         for pet in [
             "",
             "../secrets",
             "a/b",
             "a\\b",
-            "demo_sprite_pet ",
+            "sakura_rin ",
             " pet",
             "pet\nid",
             "pet\0id",
@@ -607,7 +601,7 @@ mod tests {
         assert!(!error.contains('\n'), "{error}");
 
         let pets = PetsRoot::with(&[]);
-        let error = ensure_pet_installed(&pets.path, "pet\nid").unwrap_err();
+        let error = ensure_pet_installed(std::slice::from_ref(&pets.path), "pet\nid").unwrap_err();
         assert!(error.contains("\\n"), "{error}");
         assert!(!error.contains('\n'), "{error}");
     }
@@ -618,7 +612,7 @@ mod tests {
         assert_eq!(
             execute_whitelisted_action(
                 &cmd_with("start_pomodoro", serde_json::json!({ "minutes": null })),
-                &pets.path
+                std::slice::from_ref(&pets.path)
             )
             .unwrap(),
             "action:pomodoro:25"
@@ -626,7 +620,7 @@ mod tests {
         assert_eq!(
             execute_whitelisted_action(
                 &cmd_with("start_pomodoro", serde_json::json!({ "minutes": 45 })),
-                &pets.path
+                std::slice::from_ref(&pets.path)
             )
             .unwrap(),
             "action:pomodoro:45"

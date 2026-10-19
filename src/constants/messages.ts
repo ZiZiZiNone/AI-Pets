@@ -83,8 +83,14 @@ export const STAGE_MESSAGES = {
     cpu_cores: number;
     memory_usage_mb: number | null;
     ws_port: number;
+    connected_clients: number;
+    driver_app_id?: string | null;
   }) =>
-    `💻 系统巡检：${t.os_name} (${t.arch}) | CPU ${t.cpu_cores} 核 | 运存 ${formatMemoryMb(t.memory_usage_mb)} | WS :${t.ws_port} 在线`,
+    `💻 系统巡检：${t.os_name} (${t.arch}) | CPU ${t.cpu_cores} 核 | 运存 ${formatMemoryMb(
+      t.memory_usage_mb
+    )} | WS :${t.ws_port} 在线 ${t.connected_clients} 客户端${
+      t.driver_app_id ? ` | 受 ${t.driver_app_id} 驱动` : ''
+    }`,
   telemetryBrowser: (cores: number, fps: number, level: number) =>
     `💻 系统巡检：逻辑核心 ${cores} Threads | 渲染帧率 ${fps} FPS | 等级 Lv.${level}`,
   emotionSwitched: (emotion: string) => `⚡ 已响应外部指令切换状态：[${emotion.toUpperCase()}]`,
@@ -141,44 +147,29 @@ export const PERSONA_MESSAGES = {
   clock: (now: string, level: number, energy: number, pomodoros: number) =>
     `🕒 当前系统时间 ${now} | 等级 Lv.${level} (能量 ${energy}%)，已完成 ${pomodoros} 个番茄钟！`,
   tired: '🍵 检测到精力下降，建议输入 `/break 5` 开启 5 分钟护眼休息，起身活动一下肩颈吧~',
-  bugHint: (petId: string) => {
-    if (petId === 'nyx_abyssal_familiar') {
-      return '✦ 星盘显示这个 Bug 藏在异步状态或边界条件里，把文件拖给我解析吧！';
-    }
-    if (petId === 'pulse_glitch_phantom') {
-      return '💥 BUG DETECTED! 把源码直接拖进窗口，我们一起拆解它！';
-    }
-    return '⚡ 战术雷达已锁定异常区！建议检查类型边界与异步竞态，或将文件拖入窗口直接解析。';
-  },
+  /**
+   * The answer to "this is broken".
+   *
+   * A pet that has its own way of saying it declares `persona.bug_hint` in its package;
+   * the host line below is the characterless fallback, so a hundred pets do not all
+   * report a bug in the same voice.
+   */
+  bugHint: (custom?: string) =>
+    custom ||
+    '⚡ 已定位到异常区！建议检查类型边界与异步竞态，或把文件拖进窗口直接解析。',
 } as const;
 
-export const PERSONA_POOLS: Record<string, readonly string[]> = {
-  aether_mecha_core: [
-    `[AETHER-VII] 已接收指令「{input}」——同步率 {affinity}%，随时待命！（输入 /help 查看指令）`,
-    '⚡ 反重力核心共鸣中！收到「{input}」，需要开启 25 分钟番茄冲刺（/focus 25）吗？',
-  ],
-  nyx_abyssal_familiar: [
-    '✦ 喵呜~ 夜蚀星盘听到了「{input}」，星轨正为你汇聚今日的灵感与吉兆！',
-    '🔮 契约者，关于「{input}」，不妨先喝口水，再用 /fortune 占卜今日运势哦~',
-  ],
-  pulse_glitch_phantom: [
-    '💥 YO! 收到信号「{input}」！RGB 故障通道全开，今天也要写出最酷的代码！',
-    '🎸 DROP THE BEAT // 「{input}」已写入脉冲流，需要投射全屏 AR 雷达（/scan）吗？',
-  ],
-  demo_sprite_pet: [
-    '🌟 收到啦！「{input}」~ 星奈一直在这里陪着你，摸摸头或投喂糖果（/feed）会更有干劲哦！',
-    '✨ 听到你说「{input}」，今天也要元气满满地完成待办任务呀！',
-  ],
-};
-
-export const DEFAULT_PERSONA_ID = 'aether_mecha_core';
-
-export const PET_ALIASES: Record<string, string> = {
-  aether: 'aether_mecha_core',
-  nyx: 'nyx_abyssal_familiar',
-  pulse: 'pulse_glitch_phantom',
-  nova: 'demo_sprite_pet',
-};
+/**
+ * The lines a pet answers with when it declares none of its own.
+ *
+ * Deliberately characterless: a pet that has something to say says it in `persona.lines`
+ * inside its own package. Keeping the spoken lines next to the character that says them
+ * is what lets a hundred pets live side by side without sharing one voice.
+ */
+export const GENERIC_PERSONA_POOL: readonly string[] = [
+  '收到「{input}」，同步率 {affinity}%。要一起把它理清楚吗？',
+  '「{input}」记下了。要不要先开个 25 分钟专注，再回来收拾它？',
+];
 
 /**
  * System prompt assembly, split into a headline / traits / tail so a pet's persona can

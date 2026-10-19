@@ -95,13 +95,9 @@ describe('generatePersonaDialogue', () => {
     expect(generatePersonaDialogue('我有点累了', null, STATS)).toMatch(/护眼休息/);
   });
 
-  it('gives each pet its own bug persona', () => {
-    expect(generatePersonaDialogue('这个报错了', { id: 'nyx_abyssal_familiar' } as never, STATS)).toMatch(
-      /异步状态/
-    );
-    expect(generatePersonaDialogue('bug?', { id: 'pulse_glitch_phantom' } as never, STATS)).toMatch(
-      /BUG DETECTED/
-    );
+  it('reports a bug in the voice the package declares', () => {
+    const pet = { id: 'lane_shi', persona: { bug_hint: '这个 bug 会打喷嚏。' } } as never;
+    expect(generatePersonaDialogue('这个报错了', pet, STATS)).toMatch(/打喷嚏/);
   });
 
   it('falls back to the default persona for an unknown pet', () => {
@@ -111,8 +107,13 @@ describe('generatePersonaDialogue', () => {
   });
 
   it('substitutes every template placeholder', () => {
-    for (const id of ['aether_mecha_core', 'nyx_abyssal_familiar', 'pulse_glitch_phantom', 'demo_sprite_pet']) {
-      const reply = generatePersonaDialogue('ping', { id } as never, STATS);
+    const pets = [
+      { id: 'a', persona: { lines: ['「{input}」交给我。', '同步率 {affinity}%，随时待命。'] } },
+      { id: 'b', persona: { lines: ['{input}，收到。'] } },
+      { id: 'c' },
+    ];
+    for (const pet of pets) {
+      const reply = generatePersonaDialogue('ping', pet as never, STATS);
       expect(reply).not.toMatch(/\{(input|affinity)\}/);
     }
   });

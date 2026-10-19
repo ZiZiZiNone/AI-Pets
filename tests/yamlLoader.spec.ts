@@ -9,7 +9,7 @@ import {
   serializePetManifestYaml,
 } from '@/utils/yamlLoader';
 import { matchDeclaredHitArea } from '@/adapters/IPetAdapter';
-import { PET_THEMES, resolvePetTheme, themeToCssVars } from '@/store/themes';
+import { DEFAULT_PET_THEME, resolvePetTheme, themeToCssVars } from '@/store/themes';
 import { DEFAULT_MENU_INTERACTION } from '@/utils/menuInteraction';
 
 describe('parsePetManifestYaml', () => {
@@ -95,7 +95,7 @@ describe('parseHostSettingsYaml', () => {
 
   it('round-trips a full settings document', () => {
     const original = structuredClone(DEFAULT_HOST_SETTINGS);
-    original.host.default_pet = 'pulse_glitch_phantom';
+    original.host.default_pet = 'qilin_ling';
     expect(parseHostSettingsYaml(serializeHostSettingsYaml(original))).toEqual(original);
   });
 
@@ -159,6 +159,73 @@ describe('menu interaction in pet.yaml', () => {
     );
     expect(manifest.menu_interaction?.trigger).toBe('click');
   });
+
+  it('keeps declarations meant for another host through a save', () => {
+    // The parser builds a known shape and the studio writes that shape back out. Without a
+    // round trip, editing a pet here would delete exactly the fields that exist so another
+    // host can read the same package — silently, and only after someone presses save.
+    const original = [
+      'id: probe',
+      'name: 探针',
+      'ai_pets:',
+      '  factual_rule: 只讲有证据的话',
+      '  speech_priority:',
+      '    - stop_and_fault',
+      '    - small_talk',
+      '  voice_reference: voice.wav',
+    ].join('\n');
+
+    const reparsed = parsePetManifestYaml(serializePetManifestYaml(parsePetManifestYaml(original)));
+
+    expect(reparsed.name).toBe('探针');
+    expect(reparsed.extensions?.ai_pets).toMatchObject({
+      factual_rule: '只讲有证据的话',
+      voice_reference: 'voice.wav',
+    });
+    expect((reparsed.extensions?.ai_pets as { speech_priority: string[] }).speech_priority).toEqual([
+      'stop_and_fault',
+      'small_talk',
+    ]);
+  });
+
+  it('leaves a manifest that declares nothing extra alone', () => {
+    expect(parsePetManifestYaml('id: probe\n').extensions).toBeUndefined();
+  });
+
+  it('reads the moments a package maps onto its own clips', () => {
+    const manifest = parsePetManifestYaml(
+      [
+        'id: probe',
+        'dynamics:',
+        '  moments:',
+        '    sleep: { motion: doze, expression: sleepy }',
+        '    ambient: { motion: idle }',
+        '  behaviors:',
+        '    health_reminders: false',
+      ].join('\n')
+    );
+    expect(manifest.dynamics?.moments?.sleep).toEqual({ motion: 'doze', expression: 'sleepy' });
+    expect(manifest.dynamics?.moments?.ambient).toEqual({ motion: 'idle' });
+    expect(manifest.dynamics?.behaviors?.health_reminders).toBe(false);
+  });
+
+  it('does not let a malformed dynamics block take the pet down', () => {
+    // Same defensive shape as the theme and persona: a broken block leaves the character on
+    // the host's default names rather than stopping the loop or pointing at nothing.
+    const manifest = parsePetManifestYaml(
+      ['id: probe', 'dynamics:', '  moments: not-a-mapping', '  behaviors: 7'].join('\n')
+    );
+    expect(manifest.dynamics).toBeUndefined();
+    expect(manifest.id).toBe('probe');
+  });
+
+  it('keeps the dynamics block through a save', () => {
+    const original = ['id: probe', 'dynamics:', '  moments:', '    sleep: { motion: doze }'].join(
+      '\n'
+    );
+    const reparsed = parsePetManifestYaml(serializePetManifestYaml(parsePetManifestYaml(original)));
+    expect(reparsed.dynamics?.moments?.sleep?.motion).toBe('doze');
+  });
 });
 
 describe('matchDeclaredHitArea', () => {
@@ -195,24 +262,31 @@ hit_areas:
 });
 
 describe('themes', () => {
-  it('resolves a known pet and falls back for unknown ids', () => {
-    expect(resolvePetTheme('nyx_abyssal_familiar').id).toBe('arcane_astrolabe');
-    expect(resolvePetTheme('missing').id).toBe('cyber_tactical');
-    expect(resolvePetTheme(undefined).id).toBe('cyber_tactical');
+  it('falls back to the host default when a package declares no palette', () => {
+    expect(resolvePetTheme().id).toBe('default');
+    expect(resolvePetTheme(undefined).id).toBe('default');
+  });
+
+  it('lets the package palette win and keeps the rest of the defaults', () => {
+    const theme = resolvePetTheme({ id: 'moss_camp', primary: '#0ea5e9' });
+    expect(theme.id).toBe('moss_camp');
+    expect(theme.primary).toBe('#0ea5e9');
+    expect(theme.accent).toBe(DEFAULT_PET_THEME.accent);
+    expect(theme.glow).toBe(DEFAULT_PET_THEME.glow);
   });
 
   it('exposes a complete palette for every theme', () => {
-    for (const [petId, theme] of Object.entries(PET_THEMES)) {
-      expect(theme.id, petId).toBeTruthy();
-      expect(theme.primary, petId).toMatch(/^#[0-9a-f]{6}$/i);
-      expect(theme.accent, petId).toMatch(/^#[0-9a-f]{6}$/i);
-      expect(theme.glow, petId).toContain('rgba');
+    for (const theme of [DEFAULT_PET_THEME, resolvePetTheme({ id: 'x', primary: '#123456' })]) {
+      expect(theme.id).toBeTruthy();
+      expect(theme.primary).toMatch(/^#[0-9a-f]{6}$/i);
+      expect(theme.accent).toMatch(/^#[0-9a-f]{6}$/i);
+      expect(theme.glow).toContain('rgba');
     }
   });
 
   it('exports css variables for every colour slot', () => {
-    const vars = themeToCssVars(PET_THEMES.aether_mecha_core);
-    expect(vars['--theme-primary']).toBe(PET_THEMES.aether_mecha_core.primary);
-    expect(vars['--pod-accent']).toBe(PET_THEMES.aether_mecha_core.accent);
+    const vars = themeToCssVars(DEFAULT_PET_THEME);
+    expect(vars['--theme-primary']).toBe(DEFAULT_PET_THEME.primary);
+    expect(vars['--pod-accent']).toBe(DEFAULT_PET_THEME.accent);
   });
 });

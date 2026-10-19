@@ -27,6 +27,15 @@ interface PetAnimationClipDef {
   loop?: boolean;
   duration_ms?: number;
   fps?: number;
+  /**
+   * How many frames the file holds, laid out as one horizontal strip.
+   *
+   * A strip is the only animation format the host can rely on: a browser draws the
+   * first frame of an animated GIF or APNG into a canvas and never advances it, so a
+   * pet that wants to move has to bring its frames with it. A file with no `frames`
+   * is a still picture, as before.
+   */
+  frames?: number;
 }
 
 interface PetExpressionDef {
@@ -128,6 +137,63 @@ export interface PetPersonaDef {
   style_notes?: string;
   /** Overrides everything above with a complete prompt of your own. */
   system_prompt?: string;
+  /**
+   * The phrase this character reaches for. One short line, used often enough to be
+   * recognised and rarely enough to stay a line.
+   */
+  catchphrase?: string;
+  /**
+   * What this pet says when no language model is connected.
+   *
+   * The host picks one at random and fills `{input}` (what the user said) and `{affinity}`
+   * (the bond level) into it. Without this the pet would answer in the host's generic
+   * voice, and a hundred pets would sound like one.
+   */
+  lines?: string[];
+  /** This pet's own way of saying "this is broken". Falls back to the host's line. */
+  bug_hint?: string;
+}
+
+/**
+ * What this pet plays for one moment the host reacts to on its own.
+ *
+ * Both fields are optional so a pet can map only the moments it wants to differ on; the
+ * host falls back to the name it would otherwise have used.
+ */
+interface PetMomentDef {
+  motion?: string;
+  expression?: string;
+}
+
+/**
+ * Per-pet behaviour and the motions it uses to express it.
+ *
+ * The host has its own autonomous moments — falling asleep, a hydration reminder, a posture
+ * nudge, an idle thought — and each had a motion name compiled into the loop. A pet whose
+ * clips are named differently could therefore only take part by renaming its artwork. This
+ * is that mapping as data: which clip means "asleep" for *this* character.
+ *
+ * It travels in the package rather than in host settings because it is a fact about the
+ * character, not about the machine — which is also what lets a driver read the same
+ * vocabulary and ask for a moment by name instead of guessing at clip names.
+ */
+interface PetDynamicsDef {
+  moments?: Record<string, PetMomentDef>;
+  /**
+   * Idle life for a character drawn from one still image: a breath and a slow lean.
+   *
+   * Opt-in, because it is a claim about the artwork. A sprite with its own frame animation,
+   * or one whose pose is already mid-motion, is not improved by being made to breathe — and
+   * a package that says nothing must keep the exact look it had before this existed.
+   */
+  motion?: {
+    breathing?: { period_ms?: number; amount?: number };
+    sway?: { period_ms?: number; amount?: number };
+  };
+  behaviors?: {
+    /** `false` opts this pet out of the host's hydration/posture reminders. */
+    health_reminders?: boolean;
+  };
 }
 
 export interface PetManifest {
@@ -136,6 +202,22 @@ export interface PetManifest {
   version: string;
   type: AdapterType;
   description?: string;
+  /**
+   * The short name this pet answers to, typed as `/pet <alias>`.
+   *
+   * Declared by the package rather than by the host: a hundred pets each need their own
+   * short name, and a table of them kept in source would have to be edited for every new
+   * pet that ships.
+   */
+  alias?: string;
+  /**
+   * Which shelf this pet sits on, as the package calls it.
+   *
+   * A hundred pets need a way to be listed that is not one long column, and the shelf
+   * belongs to the character rather than to the host: a roster that groups by theme has
+   * to know each pet's theme, and that fact travels with the package.
+   */
+  cluster?: string;
   persona?: PetPersonaDef;
   /** Optional voice override; anything left out is inherited from `settings.yaml`. */
   voice?: PetVoiceDef;
@@ -165,6 +247,18 @@ export interface PetManifest {
   hit_areas?: HitAreaDef[];
   drop_handlers?: DropHandlerDef[];
   menus?: MenuItemSchema[];
+  /** Which clip means what to this character's own autonomous moments. */
+  dynamics?: PetDynamicsDef;
+  /**
+   * Top-level keys this host does not interpret, kept verbatim.
+   *
+   * The manifest parser builds a known shape and the studio writes that shape back out, so
+   * without this a save from the interface would delete every field the host has no use for
+   * — which is exactly the content meant for whoever else reads the same package. Round
+   * tripping them keeps a package editable here without making this host the only reader
+   * that can preserve it.
+   */
+  extensions?: Record<string, unknown>;
 }
 
 export interface CanonicalPetState {
@@ -516,6 +610,18 @@ export interface HostSettings {
     ws_port_range: [number, number];
     heartbeat_timeout_sec: number;
     default_pet: string;
+    /**
+     * Extra directories that may hold `<id>/pet.yaml` packages.
+     *
+     * Empty by default, and that default is what matters: the host has to run with no
+     * configuration at all and find exactly the pets it was built with. Declared here
+     * because the settings file is round-tripped through this type — a key it does not
+     * carry is a key that disappears the next time a setting is saved from the interface.
+     *
+     * A directory is only ever a place to read from, so the same folder may be produced by
+     * this project's tooling or by another pet host; nothing here depends on whose it is.
+     */
+    pets_dirs?: string[];
   };
   render: {
     idle_fps: number;
@@ -607,6 +713,8 @@ export interface SystemTelemetry {
   uptime_sec: number;
   ws_port: number;
   connected_clients: number;
+  /** Which external client currently owns the character, if one has claimed it. */
+  driver_app_id?: string | null;
 }
 
 export interface SlashCommandHint {

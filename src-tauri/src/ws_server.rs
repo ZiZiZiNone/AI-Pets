@@ -58,13 +58,37 @@ pub struct IncomingWsPacket {
     pub params: Option<serde_json::Value>,
 }
 
+/// One client holding the right to decide what the character does.
+///
+/// The lease exists because two deciders otherwise share one character: the host runs its
+/// own autonomous loop, and an attached driver sends cues. Both look reasonable alone, and
+/// together they produce a pet that contradicts itself — a driver's line followed by the
+/// host's unrelated health reminder. The claim is what lets the host stand down.
+///
+/// It is deliberately *not* a gate on `pet.act`: any client may still send a cue, as before.
+/// What the lease changes is only whether the host generates actions of its own.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DriverClaim {
+    conn_id: usize,
+    app_id: String,
+}
+
 pub struct WsCommandBroker {
     expected_token: String,
     token_path: Option<PathBuf>,
+    /// Every file the token was written to, not only the primary one.
+    token_paths: Vec<PathBuf>,
     pub bound_port: AtomicU16,
     pub heartbeat_timeout_sec: AtomicU64,
     pub client_count: AtomicUsize,
     pub clients: Mutex<HashMap<usize, (String, mpsc::UnboundedSender<Message>)>>,
+    /// Held by whichever connection last claimed driving rights.
+    ///
+    /// A plain `std::sync::Mutex` rather than the tokio one used for `clients`, because
+    /// this is only ever touched in short synchronous sections: the read loop is a tokio
+    /// task, where `blocking_lock` would panic and an `.await` would add a suspension point
+    /// between a claim and the event announcing it. The lock is never held across an await.
+    driver: std::sync::Mutex<Option<DriverClaim>>,
 }
 
 impl WsCommandBroker {
@@ -77,34 +101,49 @@ impl WsCommandBroker {
     /// fallback and this reports the case where even that fails.
     pub fn init_with_token_candidates(candidates: &[PathBuf]) -> Arc<Self> {
         let token = generate_token();
-        let mut token_path = None;
+        let mut token_paths = Vec::new();
         for candidate in candidates {
             if let Some(dir) = candidate.parent() {
                 let _ = fs::create_dir_all(dir);
             }
             if fs::write(candidate, &token).is_ok() {
-                token_path = Some(candidate.clone());
-                break;
+                token_paths.push(candidate.clone());
             }
         }
-        if token_path.is_none() {
+        if token_paths.is_empty() {
             eprintln!(
                 "[ws_server] no writable location for {TOKEN_FILE_NAME}; clients cannot authenticate"
             );
         }
         Arc::new(Self {
             expected_token: token,
-            token_path,
+            token_path: token_paths.first().cloned(),
+            token_paths,
             bound_port: AtomicU16::new(DEFAULT_WS_PORT_RANGE.0),
             heartbeat_timeout_sec: AtomicU64::new(DEFAULT_HEARTBEAT_SEC),
             client_count: AtomicUsize::new(0),
             clients: Mutex::new(HashMap::new()),
+            driver: std::sync::Mutex::new(None),
         })
     }
 
     /// Where the token was written, so the same location can be cleaned up on exit.
+    ///
+    /// The first writable candidate, which is the one the documented single-file lookup
+    /// finds first. See [`Self::owned_token_paths`] for every file that has to be removed.
     pub fn token_path(&self) -> Option<&Path> {
         self.token_path.as_deref()
+    }
+
+    /// Every file holding this process's token.
+    ///
+    /// The token is written to *every* writable candidate rather than only the first. That
+    /// is what lets a client started from a different directory — another project driving
+    /// this one over the bus — find the live token in the per-user location without anyone
+    /// configuring a path. The copies hold the same value and are removed together, so
+    /// having more than one cannot make two readers disagree about which token is current.
+    pub fn owned_token_paths(&self) -> &[PathBuf] {
+        &self.token_paths
     }
 
     /// Single authentication gate for the bus. Every inbound packet must present the
@@ -114,6 +153,52 @@ impl WsCommandBroker {
             Some(token) => token == self.expected_token,
             None => false,
         }
+    }
+
+    /// Take the driving lease for `conn_id`. A later claim displaces an earlier one.
+    ///
+    /// Returns true when the holder actually changed, which is what the caller uses to
+    /// decide whether an event is worth emitting. A client re-claiming on every reconnect
+    /// would otherwise look like a state change each time.
+    pub fn claim_driver(&self, conn_id: usize, app_id: &str) -> bool {
+        let mut guard = self
+            .driver
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let next = DriverClaim {
+            conn_id,
+            app_id: app_id.to_string(),
+        };
+        if guard.as_ref() == Some(&next) {
+            return false;
+        }
+        *guard = Some(next);
+        true
+    }
+
+    /// Give the lease up, on an explicit release or when the holder disconnects.
+    ///
+    /// Only the holder can release it. Without that rule a second client could silence or
+    /// resume the host's own behaviour by accident, and the identity of the driver is
+    /// exactly the fact this lease exists to make unambiguous.
+    pub fn release_driver(&self, conn_id: usize) -> bool {
+        let mut guard = self
+            .driver
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        match guard.as_ref() {
+            Some(claim) if claim.conn_id == conn_id => {
+                *guard = None;
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Who currently holds the lease, for telemetry and for the interface to display.
+    pub fn driver_app_id(&self) -> Option<String> {
+        let guard = self.driver.lock().ok()?;
+        guard.as_ref().map(|claim| claim.app_id.clone())
     }
 
     pub async fn broadcast_event(
@@ -221,10 +306,11 @@ pub async fn start_ws_server(app: AppHandle, port_range: (u16, u16), broker: Arc
     broker.bound_port.store(active_port, Ordering::Relaxed);
     let mut next_conn_id: usize = 1;
 
-    // Resolved once, not per request: `pets/` does not move while the host runs, and every
-    // switch request needs the same answer. It is also what makes a switch to an uninstalled
-    // pet fail with a reason instead of being accepted and dropped by the interface.
-    let pets_dir = std::sync::Arc::new(crate::resolve_project_dir("pets"));
+    // Resolved once, not per request: the search path does not move while the host runs,
+    // and every switch request needs the same answer. It is also what makes a switch to an
+    // uninstalled pet fail with a reason instead of being accepted and dropped by the
+    // interface. Plural because a package may live outside the folder the host ships with.
+    let pet_roots = std::sync::Arc::new(crate::pet_search_roots());
 
     while let Ok((stream, _)) = listener.accept().await {
         let conn_id = next_conn_id;
@@ -232,7 +318,7 @@ pub async fn start_ws_server(app: AppHandle, port_range: (u16, u16), broker: Arc
 
         let app_clone = app.clone();
         let broker_clone = broker.clone();
-        let pets_dir = pets_dir.clone();
+        let pet_roots = pet_roots.clone();
 
         tokio::spawn(async move {
             // `accept_hdr_async` fixes this signature, so the large `Err` variant is
@@ -346,7 +432,14 @@ pub async fn start_ws_server(app: AppHandle, port_range: (u16, u16), broker: Arc
 
                         if let Some(ref method) = pkt.method {
                             let params = pkt.params.clone().unwrap_or(serde_json::json!({}));
-                            handle_hotplug_method(&app_clone, method, &params, &resolved_aid);
+                            handle_hotplug_method(
+                                &app_clone,
+                                &broker_clone,
+                                conn_id,
+                                method,
+                                &params,
+                                &resolved_aid,
+                            );
                             let reply = serde_json::json!({
                                 "jsonrpc": "2.0",
                                 "id": pkt.id,
@@ -360,7 +453,7 @@ pub async fn start_ws_server(app: AppHandle, port_range: (u16, u16), broker: Arc
                         let mut action_result = String::from("queued");
                         if pkt.msg_type.as_deref() == Some("safe_action") {
                             if let Some(ref act) = pkt.action {
-                                match execute_whitelisted_action(act, pets_dir.as_path()) {
+                                match execute_whitelisted_action(act, pet_roots.as_slice()) {
                                     Ok(res) => action_result = res,
                                     Err(err) => {
                                         let _ = tx.send(Message::Text(
@@ -397,6 +490,16 @@ pub async fn start_ws_server(app: AppHandle, port_range: (u16, u16), broker: Arc
                 let mut map = broker_clone.clients.lock().await;
                 map.remove(&conn_id);
             }
+            // A driver that vanishes must not leave the character in a state where nobody
+            // decides. The connection is the lease's whole lifetime: the read loop above
+            // ends when the socket closes *or* when the heartbeat times out, so a driver
+            // that stops answering loses the lease the same way an explicit release does.
+            if broker_clone.release_driver(conn_id) {
+                let _ = app_clone.emit(
+                    "pet-driver-changed",
+                    serde_json::json!({ "attached": false, "app_id": null }),
+                );
+            }
             for app_id in registered_app_ids {
                 let _ = app_clone.emit(
                     "ws-menu-unregister",
@@ -412,6 +515,8 @@ pub async fn start_ws_server(app: AppHandle, port_range: (u16, u16), broker: Arc
 
 fn handle_hotplug_method(
     app: &AppHandle,
+    broker: &Arc<WsCommandBroker>,
+    conn_id: usize,
     method: &str,
     params: &serde_json::Value,
     pkt_app_id: &Option<String>,
@@ -428,6 +533,26 @@ fn handle_hotplug_method(
         }
         "pet.say" | "speak" => {
             let _ = app.emit("pet-speech-bubble", params);
+        }
+        "pet.driver" => {
+            // `attach` is the default so a driver can claim with an empty packet, which is
+            // the shape a client reaches for first; `detach` is spelled out because
+            // releasing the lease is the deliberate act.
+            let action = params
+                .get("action")
+                .and_then(|v| v.as_str())
+                .unwrap_or("attach");
+            let changed = match action {
+                "detach" | "release" => broker.release_driver(conn_id),
+                _ => broker.claim_driver(conn_id, app_id),
+            };
+            if changed {
+                let attached = broker.driver_app_id();
+                let _ = app.emit(
+                    "pet-driver-changed",
+                    serde_json::json!({ "attached": attached.is_some(), "app_id": attached }),
+                );
+            }
         }
         "menu.register" => {
             let mut payload = params.clone();
@@ -472,6 +597,49 @@ mod tests {
     fn broker_with_token(name: &str) -> Arc<WsCommandBroker> {
         let path = std::env::temp_dir().join(format!("ai-pets-{name}.token"));
         WsCommandBroker::init_with_token_candidates(&[path])
+    }
+
+    #[test]
+    fn a_claim_installs_the_holder_and_reports_the_change_once() {
+        let broker = broker_with_token("driver-claim");
+        assert_eq!(broker.driver_app_id(), None);
+        assert!(broker.claim_driver(1, "omncore"));
+        assert_eq!(broker.driver_app_id().as_deref(), Some("omncore"));
+        // Re-claiming from the same connection is not a state change; announcing it again
+        // would make a reconnecting client look like it took over from somebody.
+        assert!(!broker.claim_driver(1, "omncore"));
+    }
+
+    #[test]
+    fn a_later_claim_displaces_the_earlier_driver() {
+        let broker = broker_with_token("driver-displace");
+        assert!(broker.claim_driver(1, "first"));
+        assert!(broker.claim_driver(2, "second"));
+        assert_eq!(broker.driver_app_id().as_deref(), Some("second"));
+    }
+
+    #[test]
+    fn only_the_holder_can_release_the_lease() {
+        let broker = broker_with_token("driver-owner");
+        assert!(broker.claim_driver(2, "owner"));
+        // A non-holder releasing would let any client silence or resume the host by
+        // accident, which is the ambiguity the lease exists to remove.
+        assert!(!broker.release_driver(1));
+        assert_eq!(broker.driver_app_id().as_deref(), Some("owner"));
+        assert!(broker.release_driver(2));
+        assert_eq!(broker.driver_app_id(), None);
+    }
+
+    #[test]
+    fn a_disconnect_releases_only_the_connection_that_held_the_lease() {
+        let broker = broker_with_token("driver-disconnect");
+        assert!(broker.claim_driver(1, "gone"));
+        assert!(
+            !broker.release_driver(7),
+            "an unrelated socket must not free the lease"
+        );
+        assert!(broker.release_driver(1));
+        assert_eq!(broker.driver_app_id(), None);
     }
 
     #[test]
@@ -599,6 +767,49 @@ mod tests {
         let broker = WsCommandBroker::init_with_token_candidates(&[blocker.join("token")]);
 
         assert_eq!(broker.token_path(), None);
+    }
+
+    #[test]
+    fn the_token_is_written_to_every_writable_candidate_not_just_the_first() {
+        // The mirror is what lets a client in another directory — another project driving
+        // this one — find the live bus without anyone configuring a path.
+        let dir = std::env::temp_dir().join(format!("ai-pets-mirror-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("mirror dir");
+        let primary = dir.join("cwd.token");
+        let mirror = dir.join("per-user.token");
+
+        let broker =
+            WsCommandBroker::init_with_token_candidates(&[primary.clone(), mirror.clone()]);
+
+        assert_eq!(broker.token_path(), Some(primary.as_path()));
+        assert_eq!(broker.owned_token_paths().len(), 2);
+        for path in [&primary, &mirror] {
+            assert_eq!(
+                std::fs::read_to_string(path).expect("token file").trim(),
+                broker.expected_token,
+                "{} must hold the same token as the primary",
+                path.display()
+            );
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_unwritable_candidate_is_absent_from_the_owned_list() {
+        let dir = std::env::temp_dir();
+        let blocker = dir.join("ai-pets-mirror-not-a-directory");
+        std::fs::write(&blocker, b"file, not a directory").expect("blocker file");
+        let unwritable = blocker.join("token");
+        let writable = dir.join(format!("ai-pets-mirror-{}.token", std::process::id()));
+
+        let broker =
+            WsCommandBroker::init_with_token_candidates(&[unwritable.clone(), writable.clone()]);
+
+        assert_eq!(broker.owned_token_paths(), std::slice::from_ref(&writable));
+        // Cleanup walks this list, so a path that was never written must not appear in it
+        // — removing a file another program owns is worse than leaving one behind.
+        assert!(!broker.owned_token_paths().contains(&unwritable));
     }
 
     fn header(value: &str) -> HeaderValue {

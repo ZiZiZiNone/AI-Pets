@@ -33,6 +33,39 @@ const EDGE_PEEK_ACTIVE_X = 140;
 const EDGE_PEEK_Y = 260;
 
 /**
+ * Whether this pet takes part in the host's health reminders at all.
+ *
+ * Two switches, and the pet wins: the machine-wide setting decides whether the host offers
+ * the behaviour, and the package decides whether *this* character wants it. A pet that would
+ * rather not nag its owner should not need the owner to turn reminders off for every pet.
+ */
+function healthRemindersEnabled(petStore: PetStore): boolean {
+  if (petStore.settings.behavior.enable_health_reminders === false) return false;
+  return petStore.currentPet?.dynamics?.behaviors?.health_reminders !== false;
+}
+
+/**
+ * The motion and expression this pet declares for one host moment.
+ *
+ * Falls back to the names the loop used before this became data, so a package without a
+ * `dynamics` block behaves exactly as it always did. The block exists because these names
+ * were compiled into the loop: a character whose clips are called something else could only
+ * take part by renaming its artwork.
+ */
+function momentOf(
+  petStore: PetStore,
+  name: string,
+  fallbackMotion: string,
+  fallbackExpression: string
+): { motion: string; expression: string } {
+  const declared = petStore.currentPet?.dynamics?.moments?.[name];
+  return {
+    motion: declared?.motion || fallbackMotion,
+    expression: declared?.expression || fallbackExpression,
+  };
+}
+
+/**
  * Autonomous behaviour loop.
  *
  * Timer bookkeeping lives in this closure rather than at module scope, so each host
@@ -52,6 +85,13 @@ function createAutonomousLoop(petStore: PetStore) {
 
   function tick(): void {
     const now = Date.now();
+    // An attached driver owns the character. Everything below this line is the host
+    // deciding what the pet should do, and two deciders sharing one character produce a
+    // pet that contradicts itself — a driver's line followed by the host's unrelated
+    // hydration reminder. Standing down entirely, rather than lowering priority, is what
+    // makes the handover legible: during a session the host says nothing of its own.
+    if (petStore.externalDriver) return;
+
     const idleSec = (now - petStore.lastUserActivityAt) / 1000;
 
     if (petStore.activeMotion === 'sleep') {
@@ -67,25 +107,27 @@ function createAutonomousLoop(petStore: PetStore) {
 
     const sleepAfterSec = petStore.settings.behavior.sleep_after_idle_sec || DEFAULT_SLEEP_SEC;
     if (idleSec >= sleepAfterSec && petStore.activeMotion !== 'sleep') {
+      const asleep = momentOf(petStore, 'sleep', 'sleep', 'sleepy');
       petStore.scheduleAction({
         priority: 'P3',
-        motion: 'sleep',
-        expression: 'sleepy',
+        motion: asleep.motion,
+        expression: asleep.expression,
         text: STAGE_MESSAGES.asleep,
         durationMs: 4000,
       });
       return;
     }
 
-    if (petStore.settings.behavior.enable_health_reminders !== false) {
+    if (healthRemindersEnabled(petStore)) {
       const hydrationMs =
         (petStore.settings.behavior.hydration_interval_min || DEFAULT_HYDRATION_MIN) * 60_000;
       if (now - lastHydrationAt >= hydrationMs) {
         lastHydrationAt = now;
+        const remind = momentOf(petStore, 'hydration', 'happy', 'smile');
         petStore.scheduleAction({
           priority: 'P2',
-          motion: 'happy',
-          expression: 'smile',
+          motion: remind.motion,
+          expression: remind.expression,
           text: STAGE_MESSAGES.hydration,
           durationMs: 6500,
           quickReplies: [
@@ -107,10 +149,11 @@ function createAutonomousLoop(petStore: PetStore) {
         (petStore.settings.behavior.posture_interval_min || DEFAULT_POSTURE_MIN) * 60_000;
       if (now - lastPostureAt >= postureMs) {
         lastPostureAt = now;
+        const nudge = momentOf(petStore, 'posture', 'pat', 'smile');
         petStore.scheduleAction({
           priority: 'P2',
-          motion: 'pat',
-          expression: 'smile',
+          motion: nudge.motion,
+          expression: nudge.expression,
           text: STAGE_MESSAGES.posture,
           durationMs: 6500,
           quickReplies: [
@@ -144,10 +187,11 @@ function createAutonomousLoop(petStore: PetStore) {
       petStore.currentPet?.name || DEFAULT_PET_NAME,
       petStore.stats.affinity
     );
+    const musing = momentOf(petStore, 'ambient', 'idle', 'smile');
     petStore.scheduleAction({
       priority: 'P3',
-      motion: 'idle',
-      expression: 'smile',
+      motion: musing.motion,
+      expression: musing.expression,
       text: thoughts[Math.floor(Math.random() * thoughts.length)],
       durationMs: 3600,
     });

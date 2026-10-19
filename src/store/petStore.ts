@@ -82,7 +82,9 @@ type WindowRole = 'main' | 'companion';
 
 const STAGE_CHANNEL_NAME = 'desktop_pet_stage_bus';
 const PRIORITY_RANK: Record<ActionPriority, number> = { P0: 4, P1: 3, P2: 2, P3: 1 };
-const DEFAULT_PET_ID = 'aether_mecha_core';
+// The pet the host opens on when the configuration names none. It is a real shipped
+// package, so the first frame is a character rather than the neutral placeholder.
+const DEFAULT_PET_ID = 'silverfeather_chibi';
 
 const STORAGE_KEYS = {
   LLM: 'desktop_pet_llm_config_v2',
@@ -115,6 +117,15 @@ export const usePetStore = defineStore('petStore', () => {
   const studio_mode = ref(false);
   const inline_hud = ref(true);
   const dnd_mode = ref(false);
+  /**
+   * Which external client currently owns the character, if any.
+   *
+   * The host's own autonomous behaviour stands down while this is set: two deciders share
+   * one character otherwise, and the result is a pet that contradicts itself. `null` means
+   * nobody has claimed driving rights, which is the state a host with no client attached
+   * is always in.
+   */
+  const externalDriver = ref<string | null>(null);
 
   const settings = ref<HostSettings>(structuredClone(DEFAULT_HOST_SETTINGS));
   const availablePets = ref<PetManifest[]>([structuredClone(FALLBACK_PET_MANIFEST)]);
@@ -184,7 +195,7 @@ export const usePetStore = defineStore('petStore', () => {
     typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel(STAGE_CHANNEL_NAME) : null;
 
   const activeTheme = computed<PetThemePalette>(
-    () => resolvePetTheme(currentPet.value?.id || active_pet_id.value, currentPet.value?.theme)
+    () => resolvePetTheme(currentPet.value?.theme)
   );
   const activeThemeCssVars = computed(() => themeToCssVars(activeTheme.value));
   const mouthOpenY = computed(() => lipSync.value.mouthOpenY);
@@ -312,6 +323,22 @@ export const usePetStore = defineStore('petStore', () => {
       activeMotion.value = 'idle';
       activeExpression.value = 'neutral';
     }
+  }
+
+  /**
+   * Record who owns the character, as reported by the bus.
+   *
+   * Kept here rather than derived from `connected_clients`, because those are different
+   * facts: a client that only wants to show a bubble should not silence the host, and the
+   * bus reports the lease separately for exactly that reason.
+   */
+  function setExternalDriver(appId: string | null): void {
+    externalDriver.value = appId;
+    // Console rather than a bubble: taking over must not put words in the driver's mouth,
+    // and a takeover that leaves no trace at all is indistinguishable from a broken host.
+    console.info(
+      appId ? `[driver] 外部驱动已接管：${appId}` : '[driver] 外部驱动已释放，宿主恢复自主行为'
+    );
   }
 
   function advanceActionQueue(): void {
@@ -847,6 +874,8 @@ export const usePetStore = defineStore('petStore', () => {
     studio_mode,
     inline_hud,
     dnd_mode,
+    externalDriver,
+    setExternalDriver,
     settings,
     availablePets,
     currentPet,

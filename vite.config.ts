@@ -27,11 +27,34 @@ function petAssetsPlugin(): Plugin {
   const petsRoot = resolve(__dirname, 'pets') + sep;
   const configRoot = resolve(__dirname, 'config') + sep;
 
+  /**
+   * The ids of every package under `pets/`, read from the directory itself.
+   *
+   * The browser preview has no directory listing of its own, so the roster is published
+   * as one small index. It is derived rather than written by hand on purpose: a pet
+   * dropped into `pets/` has to appear without anyone editing a list in source.
+   */
+  const listPetIds = (): string[] => {
+    const root = resolve(__dirname, 'pets');
+    if (!fs.existsSync(root)) return [];
+    return fs
+      .readdirSync(root, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .filter((name) => fs.existsSync(resolve(root, name, 'pet.yaml')))
+      .sort();
+  };
+
   return {
     name: 'desktop-pet-assets-bridge',
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
         const rawUrl = req.url?.split('?')[0] || '';
+        if (rawUrl === '/pets/index.json') {
+          res.setHeader('Content-Type', 'application/json; charset=utf-8');
+          res.end(JSON.stringify(listPetIds()));
+          return;
+        }
         if (rawUrl.startsWith('/pets/') || rawUrl.startsWith('/config/')) {
           try {
             const decoded = decodeURIComponent(rawUrl);
@@ -69,6 +92,11 @@ function petAssetsPlugin(): Plugin {
       };
       copyRecursive(resolve(__dirname, 'pets'), resolve(__dirname, 'dist/pets'));
       copyRecursive(resolve(__dirname, 'config'), resolve(__dirname, 'dist/config'));
+      fs.writeFileSync(
+        resolve(__dirname, 'dist/pets/index.json'),
+        JSON.stringify(listPetIds()),
+        'utf8'
+      );
     },
   };
 }

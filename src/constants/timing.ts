@@ -14,6 +14,14 @@ export const STAGE_HEIGHT_PX = 420;
 export const HIT_AREA_ORIGIN_X = 160;
 export const HIT_AREA_ORIGIN_Y = 170;
 
+/**
+ * How fast a frame strip is stepped through when the clip does not say.
+ *
+ * Twelve frames a second is enough for a small character on a desktop and cheap enough
+ * that a strip of a few dozen frames stays smooth on an integrated GPU-less machine.
+ */
+export const DEFAULT_CLIP_FPS = 12;
+
 /** Vertical anchor of the sprite relative to the stage centre. */
 export const SPRITE_GROUND_OFFSET_PX = 132;
 export const SPRITE_CENTER_Y_RATIO = 0.52;
@@ -183,3 +191,17 @@ export const RADIAL_MENU_RADIUS_X_PX = 122;
 export const RADIAL_MENU_RADIUS_Y_PX = 114;
 export const RADIAL_MENU_CENTER_Y_PX = 218;
 export const RADIAL_MENU_START_ANGLE_RAD = -Math.PI / 2;
+
+/**
+ * Procedural idle motion, for a character drawn from a single still image.
+ *
+ * Defaults apply when a package opts into breathing or swaying but leaves a number out;
+ * the ceilings exist because the numbers come from a package somebody else wrote, and a
+ * misplaced decimal point should not be able to make a character look broken.
+ */
+export const BREATH_DEFAULT_PERIOD_MS = 3600;
+export const BREATH_DEFAULT_AMOUNT = 0.012;
+export const BREATH_MAX_AMOUNT = 0.05;
+export const SWAY_DEFAULT_PERIOD_MS = 5200;
+export const SWAY_DEFAULT_AMOUNT = 1.6;
+export const SWAY_MAX_AMOUNT = 8;

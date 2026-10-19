@@ -5,6 +5,7 @@ import {
   resolvePetAssetUrl,
 } from './IPetAdapter';
 import { resolvePetTheme } from '@/store/themes';
+import { breathingScale, idleMotionFor, weightShift } from '@/utils/proceduralMotion';
 import {
   ALPHA_MASK_ALPHA_THRESHOLD,
   ALPHA_MASK_REBUILD_FRAMES,
@@ -12,6 +13,7 @@ import {
   BOUNCE_DAMPING,
   BOUNCE_MIN_IMPACT_SPEED,
   BOUNCE_SPEED_DIVISOR,
+  DEFAULT_CLIP_FPS,
   DEFAULT_GRAVITY_PX_S2,
   GRAVITY_MAX_PX_S2,
   GRAVITY_MIN_PX_S2,
@@ -69,6 +71,10 @@ export class SpriteAdapter implements IPetAdapter {
   private mouthFormX = 0;
   private elapsedTime = 0;
 
+  /** Frames in the file currently shown, and how fast they are stepped through. */
+  private clipFrames = 1;
+  private clipFps = 0;
+
   private physicsY = 0;
   private velocityY = 0;
   private gravityAccel = DEFAULT_GRAVITY_PX_S2;
@@ -114,7 +120,7 @@ export class SpriteAdapter implements IPetAdapter {
   }
 
   public spawnInteractionBurst(x: number, y: number, text = '+EXP'): void {
-    const theme = resolvePetTheme(this.manifest?.id);
+    const theme = resolvePetTheme(this.manifest?.theme);
     this.bursts.push({
       x,
       y,
@@ -158,6 +164,13 @@ export class SpriteAdapter implements IPetAdapter {
 
     const entryFile = manifest.model.entry || 'idle.svg';
     this.loadedEntryFile = entryFile;
+    // The entry may itself be a strip of frames; the strip is stepped through from the
+    // first frame, so the pet is already moving before any motion is requested.
+    const entryClip = Object.values(manifest.model.animations ?? {}).find(
+      (clip) => clip.file === entryFile
+    );
+    this.clipFrames = Math.max(1, entryClip?.frames ?? 1);
+    this.clipFps = entryClip?.fps && entryClip.fps > 0 ? entryClip.fps : 0;
     const assetUrl = await resolvePetAssetUrl(manifest, entryFile);
     await this.loadImage(assetUrl);
     this.renderFrame(0.016);
@@ -189,7 +202,13 @@ export class SpriteAdapter implements IPetAdapter {
       }
     }
 
-    const clipFile = this.manifest?.model.animations?.[motionName]?.file;
+    const clip = this.manifest?.model.animations?.[motionName];
+    // A clip may be a strip of frames rather than one picture; the strip is stepped
+    // through while the motion lasts.
+    this.clipFrames = Math.max(1, clip?.frames ?? 1);
+    this.clipFps = clip?.fps && clip.fps > 0 ? clip.fps : 0;
+
+    const clipFile = clip?.file;
     if (clipFile && clipFile !== this.loadedEntryFile && this.manifest) {
       this.loadedEntryFile = clipFile;
       void resolvePetAssetUrl(this.manifest, clipFile).then((url) => this.loadImage(url));
@@ -347,7 +366,23 @@ export class SpriteAdapter implements IPetAdapter {
       scaleY = this.baseScale * (1 - Math.sin(this.elapsedTime * 1.2) * 0.02);
     }
 
-    const theme = resolvePetTheme(this.manifest?.id);
+    // Procedural idle life, for a package that asks for it and only while the pose is at
+    // rest. `idleMotionFor` owns that decision — including which motions are already being
+    // shaped below — so it can be checked without a canvas.
+    let idleOffsetX = 0;
+    const idleMotion = idleMotionFor(this.currentMotion, this.manifest?.dynamics);
+    if (idleMotion?.breathing) {
+      const breath = breathingScale(this.elapsedTime, idleMotion.breathing);
+      scaleX *= breath.x;
+      scaleY *= breath.y;
+    }
+    if (idleMotion?.sway) {
+      const sway = weightShift(this.elapsedTime, idleMotion.sway);
+      idleOffsetX = sway.dx;
+      rotation += sway.rotation;
+    }
+
+    const theme = resolvePetTheme(this.manifest?.theme);
     const primary = theme.primary;
     const accent = theme.accent;
     const expTintHex = numberTintToHex(
@@ -370,7 +405,10 @@ export class SpriteAdapter implements IPetAdapter {
     ctx.restore();
 
     ctx.save();
-    ctx.translate(cx + this.smoothLook.x * 6, cy + bobY + this.smoothLook.y * 4);
+    ctx.translate(
+      cx + this.smoothLook.x * 6 + idleOffsetX,
+      cy + bobY + this.smoothLook.y * 4
+    );
     ctx.rotate(rotation);
     ctx.scale(scaleX, scaleY);
 
@@ -391,7 +429,25 @@ export class SpriteAdapter implements IPetAdapter {
     const drawW = SPRITE_DRAW_WIDTH_PX;
     const drawH = SPRITE_DRAW_HEIGHT_PX;
     if (this.img && this.img.complete && this.img.naturalWidth > 0) {
-      ctx.drawImage(this.img, -drawW * 0.5, -drawH * 0.5, drawW, drawH);
+      if (this.clipFrames > 1) {
+        // The file is a strip: one frame at a time, stepped by the clip's own rate.
+        const frameWidth = this.img.naturalWidth / this.clipFrames;
+        const rate = this.clipFps > 0 ? this.clipFps : DEFAULT_CLIP_FPS;
+        const index = Math.floor(this.motionElapsed * rate) % this.clipFrames;
+        ctx.drawImage(
+          this.img,
+          index * frameWidth,
+          0,
+          frameWidth,
+          this.img.naturalHeight,
+          -drawW * 0.5,
+          -drawH * 0.5,
+          drawW,
+          drawH
+        );
+      } else {
+        ctx.drawImage(this.img, -drawW * 0.5, -drawH * 0.5, drawW, drawH);
+      }
     } else {
       ctx.fillStyle = primary;
       ctx.beginPath();

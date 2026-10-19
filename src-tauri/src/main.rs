@@ -2,12 +2,17 @@
 
 mod action_executor;
 mod engine_runner;
+mod pet_packages;
 mod win32_window;
 mod ws_server;
 
 use action_executor::{execute_general_pet_action, PanelHost, PanelRequest, PetActionPayload};
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
+use pet_packages::{
+    collect_pet_packages, parse_extra_pet_dirs, pet_package_roots, PetManifestEntry,
+};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
@@ -71,7 +76,7 @@ impl Default for CanonicalPetState {
     fn default() -> Self {
         Self {
             revision: 1,
-            active_pet_id: "aether_mecha_core".to_string(),
+            active_pet_id: "silverfeather_chibi".to_string(),
             emotion: "idle".to_string(),
             is_click_through: false,
             volume: 0.85,
@@ -80,13 +85,6 @@ impl Default for CanonicalPetState {
             dnd_mode: false,
         }
     }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PetManifestEntry {
-    pub id: String,
-    pub yaml: String,
-    pub base_path: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -106,6 +104,8 @@ pub struct SystemTelemetry {
     pub uptime_sec: u64,
     pub ws_port: u16,
     pub connected_clients: usize,
+    /// Which external client currently owns the character, if any.
+    pub driver_app_id: Option<String>,
 }
 
 pub struct HostRuntimeMeta {
@@ -142,14 +142,19 @@ fn resolve_project_dir(sub: &str) -> PathBuf {
         .unwrap_or_else(|| PathBuf::from(sub))
 }
 
-/// Where the bus token may be written, in order of preference.
+/// Where the bus token is written, in order of preference.
 ///
 /// The working directory comes first so a development or portable run keeps the
-/// `.pet_ws_token` file clients already look for. That directory is not always
-/// writable: a per-machine install runs from `Program Files`, where a standard user
-/// cannot create files, and a token that is never written leaves the bus looking
-/// healthy while no client can authenticate. The app data directory is per-user and
-/// always writable, so it is the fallback that keeps the bus reachable.
+/// `.pet_ws_token` file clients already look for. That directory is not always writable: a
+/// per-machine install runs from `Program Files`, where a standard user cannot create
+/// files, and a token that is never written leaves the bus looking healthy while no client
+/// can authenticate.
+///
+/// Every writable candidate receives the same token rather than only the first, which is
+/// what lets a client started from a different directory find the live bus. Two projects
+/// that share a pet package sit in different directories by definition, so a lookup that
+/// only ever finds the host's own working directory makes them un-reachable from each other
+/// without a hand-configured path.
 fn token_path_candidates(app: &tauri::App) -> Vec<PathBuf> {
     let mut candidates = vec![PathBuf::from(TOKEN_FILE_NAME)];
     if let Ok(dir) = app.path().app_data_dir() {
@@ -379,50 +384,67 @@ fn open_companion_window(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Package folders the host loaded from outside its own `pets/`.
+///
+/// Populated by [`load_host_configs`] and consulted by [`save_pet_manifest`] so that a pet
+/// which came from somewhere else is written back where it was read from. Only packages the
+/// host itself discovered are recorded: a caller supplies an id, never a path, so this map
+/// is the whole of what a write request can reach beyond the bundled directory.
+static EXTERNAL_PACKAGE_DIRS: Mutex<Option<HashMap<String, PathBuf>>> = Mutex::new(None);
+
+/// Every directory a pet may be loaded from, in the order they are searched.
+///
+/// The bundled `pets/` comes first so a package that exists in two places resolves to the
+/// one the host also knows how to save. `host.pets_dirs` adds to it and defaults to empty,
+/// which is what lets the host run with nothing configured at all.
+fn pet_search_roots() -> Vec<PathBuf> {
+    let bundled = resolve_project_dir("pets");
+    let settings =
+        fs::read_to_string(resolve_project_dir("config").join("settings.yaml")).unwrap_or_default();
+    pet_package_roots(&bundled, parse_extra_pet_dirs(&settings))
+}
+
 #[tauri::command]
 fn load_host_configs() -> HostConfigBundle {
     let config_dir = resolve_project_dir("config");
-    let pets_dir = resolve_project_dir("pets");
+    let bundled_pets_dir = resolve_project_dir("pets");
 
     let settings_yaml = fs::read_to_string(config_dir.join("settings.yaml")).ok();
     let global_menu_yaml = fs::read_to_string(config_dir.join("global_menu.yaml")).ok();
 
-    let mut pets = Vec::new();
-    if let Ok(entries) = fs::read_dir(&pets_dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                let yaml_path = path.join("pet.yaml");
-                if let Ok(yaml_text) = fs::read_to_string(&yaml_path) {
-                    let id = path
-                        .file_name()
-                        .and_then(|n| n.to_str())
-                        .unwrap_or("unknown")
-                        .to_string();
-                    let abs_base = fs::canonicalize(&path)
-                        .unwrap_or(path)
-                        .to_string_lossy()
-                        .to_string();
-                    pets.push(PetManifestEntry {
-                        id,
-                        yaml: yaml_text,
-                        base_path: abs_base,
-                    });
-                }
-            }
-        }
+    let roots = pet_package_roots(
+        &bundled_pets_dir,
+        parse_extra_pet_dirs(settings_yaml.as_deref().unwrap_or_default()),
+    );
+    let scan = collect_pet_packages(&roots);
+
+    for skipped in &scan.skipped {
+        eprintln!(
+            "[pets] 跳过外部包 {}：{} 下的同名包已被采用",
+            skipped.id,
+            skipped.path.display()
+        );
     }
 
-    pets.sort_by(|a, b| {
-        let rank = |id: &str| match id {
-            "aether_mecha_core" => 0,
-            "nyx_abyssal_familiar" => 1,
-            "pulse_glitch_phantom" => 2,
-            "demo_sprite_pet" => 3,
-            _ => 4,
-        };
-        rank(&a.id).cmp(&rank(&b.id)).then_with(|| a.id.cmp(&b.id))
-    });
+    let bundled_key = fs::canonicalize(&bundled_pets_dir).unwrap_or(bundled_pets_dir.clone());
+    let external: HashMap<String, PathBuf> = scan
+        .sources
+        .iter()
+        .filter(|(_, dir)| {
+            let parent = dir.parent().unwrap_or(Path::new(""));
+            fs::canonicalize(parent).unwrap_or_else(|_| parent.to_path_buf()) != bundled_key
+        })
+        .map(|(id, dir)| (id.clone(), dir.clone()))
+        .collect();
+    if let Ok(mut guard) = EXTERNAL_PACKAGE_DIRS.lock() {
+        *guard = Some(external);
+    }
+
+    let mut pets = scan.packages;
+    // Alphabetical, so the roster reads the same way every time and a hundred pets stay
+    // findable. The bundled root still comes first for id conflicts — that is decided in
+    // the scan, not here.
+    pets.sort_by(|a, b| a.id.cmp(&b.id));
 
     HostConfigBundle {
         settings_yaml,
@@ -435,11 +457,22 @@ fn load_host_configs() -> HostConfigBundle {
 fn save_pet_manifest(pet_id: String, yaml_content: String) -> Result<(), String> {
     validate_safe_pet_id(&pet_id)?;
     mark_internal_write();
-    let target_dir = resolve_project_dir("pets").join(&pet_id);
+    let target_root = external_package_dir(&pet_id).unwrap_or_else(|| resolve_project_dir("pets"));
+    let target_dir = target_root.join(&pet_id);
     if !target_dir.exists() {
         fs::create_dir_all(&target_dir).map_err(|e| e.to_string())?;
     }
     fs::write(target_dir.join("pet.yaml"), yaml_content).map_err(|e| e.to_string())
+}
+
+/// The folder an external package was loaded from, when this id names one.
+fn external_package_dir(pet_id: &str) -> Option<PathBuf> {
+    EXTERNAL_PACKAGE_DIRS
+        .lock()
+        .ok()?
+        .as_ref()?
+        .get(pet_id)
+        .cloned()
 }
 
 #[tauri::command]
@@ -544,6 +577,7 @@ fn get_system_telemetry(meta: State<'_, HostRuntimeMeta>) -> SystemTelemetry {
         uptime_sec: meta.started_at.elapsed().as_secs(),
         ws_port: meta.broker.bound_port.load(Ordering::Relaxed),
         connected_clients: meta.broker.client_count.load(Ordering::Relaxed),
+        driver_app_id: meta.broker.driver_app_id(),
     }
 }
 
@@ -555,14 +589,15 @@ fn setup_config_hot_reload_watcher(app: AppHandle) {
             Err(_) => return,
         };
 
-        for dir in [resolve_project_dir("config"), resolve_project_dir("pets")] {
-            if Path::new(&dir).exists() {
-                let _ = watcher.watch(Path::new(&dir), RecursiveMode::Recursive);
-            }
-        }
+        let mut watched: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
+        sync_hot_reload_watches(&mut watcher, &mut watched);
 
         let mut last_emit = Instant::now() - Duration::from_secs(1);
         for res in rx {
+            // The set of directories is re-read per event rather than captured once, so a
+            // package directory added to `settings.yaml` while the host is running starts
+            // reloading without a restart.
+            sync_hot_reload_watches(&mut watcher, &mut watched);
             if res.is_ok()
                 && !is_recent_internal_write()
                 && last_emit.elapsed() >= Duration::from_millis(300)
@@ -572,6 +607,30 @@ fn setup_config_hot_reload_watcher(app: AppHandle) {
             }
         }
     });
+}
+
+/// Keeps the watch list equal to the directories the host actually reads.
+///
+/// Adding and removing are both handled: a directory that leaves `pets_dirs` stops being
+/// watched, which is the only way an edited setting can take effect for a package that is
+/// no longer configured.
+fn sync_hot_reload_watches(
+    watcher: &mut RecommendedWatcher,
+    watched: &mut std::collections::HashSet<PathBuf>,
+) {
+    let mut wanted: std::collections::HashSet<PathBuf> =
+        std::collections::HashSet::from([resolve_project_dir("config")]);
+    wanted.extend(pet_search_roots());
+
+    for gone in watched.difference(&wanted) {
+        let _ = watcher.unwatch(gone);
+    }
+    for added in wanted.difference(watched) {
+        if added.exists() {
+            let _ = watcher.watch(added, RecursiveMode::Recursive);
+        }
+    }
+    *watched = wanted;
 }
 
 fn setup_system_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
@@ -656,10 +715,12 @@ fn setup_system_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>>
                 let _ = app_handle.emit("pet-state:sync", &snapshot);
             }
             "tray_quit" => {
-                // Remove the token from wherever it was actually written, which is not
-                // necessarily the working directory.
+                // Remove the token from every location it was written to, which is neither
+                // necessarily the working directory nor limited to a single file: the
+                // per-user copy is what lets another project find this bus, and a leftover
+                // copy would authenticate against a host that is no longer running.
                 let meta = app_handle.state::<HostRuntimeMeta>();
-                if let Some(path) = meta.broker.token_path() {
+                for path in meta.broker.owned_token_paths() {
                     let _ = fs::remove_file(path);
                 }
                 app_handle.exit(0);

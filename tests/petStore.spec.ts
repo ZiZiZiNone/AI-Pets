@@ -135,7 +135,7 @@ describe('petStore snapshots', () => {
     const store = usePetStore();
     store.applySnapshot({
       revision: 5,
-      active_pet_id: 'aether_mecha_core',
+      active_pet_id: 'sakura_rin',
       emotion: 'happy',
       is_click_through: true,
       volume: 0.5,
@@ -148,7 +148,7 @@ describe('petStore snapshots', () => {
 
     store.applySnapshot({
       revision: 5,
-      active_pet_id: 'aether_mecha_core',
+      active_pet_id: 'sakura_rin',
       emotion: 'idle',
       is_click_through: false,
       volume: 0.9,
@@ -162,12 +162,12 @@ describe('petStore snapshots', () => {
   it('adopts a newer snapshot and switches the pet', () => {
     const store = usePetStore();
     store.availablePets = [
-      { id: 'aether_mecha_core', name: 'A', version: '1', type: 'sprite', model: { entry: 'a.svg', scale: 1, offset: { x: 0, y: 0 } } },
-      { id: 'pulse_glitch_phantom', name: 'P', version: '1', type: 'sprite', model: { entry: 'p.svg', scale: 1, offset: { x: 0, y: 0 } } },
+      { id: 'sakura_rin', name: 'A', version: '1', type: 'sprite', model: { entry: 'a.svg', scale: 1, offset: { x: 0, y: 0 } } },
+      { id: 'qilin_ling', name: 'P', version: '1', type: 'sprite', model: { entry: 'p.svg', scale: 1, offset: { x: 0, y: 0 } } },
     ];
     store.applySnapshot({
       revision: 9,
-      active_pet_id: 'pulse_glitch_phantom',
+      active_pet_id: 'qilin_ling',
       emotion: 'happy',
       is_click_through: false,
       volume: 0.7,
@@ -175,8 +175,8 @@ describe('petStore snapshots', () => {
       inline_hud: true,
       dnd_mode: true,
     });
-    expect(store.active_pet_id).toBe('pulse_glitch_phantom');
-    expect(store.currentPet?.id).toBe('pulse_glitch_phantom');
+    expect(store.active_pet_id).toBe('qilin_ling');
+    expect(store.currentPet?.id).toBe('qilin_ling');
     expect(store.dnd_mode).toBe(true);
   });
 
@@ -229,12 +229,12 @@ describe('petStore derived state', () => {
 
   it('swaps the theme with the active pet', () => {
     const store = usePetStore();
-    store.availablePets = [
-      manifest('aether_mecha_core', 'cyber_tactical'),
-      manifest('nyx_abyssal_familiar', 'arcane_astrolabe'),
-    ];
+    const first = manifest('sakura_rin', 'A', 'cyber_tactical');
+    const second = manifest('guanlan', 'N', 'arcane_astrolabe');
+    store.availablePets = [first, second];
+    store.currentPet = first;
     expect(store.activeTheme.id).toBe('cyber_tactical');
-    store.switchPetById('nyx_abyssal_familiar');
+    store.switchPetById('guanlan');
     expect(store.activeTheme.id).toBe('arcane_astrolabe');
   });
 
@@ -244,7 +244,7 @@ describe('petStore derived state', () => {
     // not on disk looked like a dead item, and an external switch request was acknowledged
     // with `status: "ok"` while nothing happened.
     const store = usePetStore();
-    store.availablePets = [manifest('aether_mecha_core', 'cyber_tactical')];
+    store.availablePets = [manifest('sakura_rin', 'cyber_tactical')];
     const before = store.currentPet?.id;
 
     const outcome = store.switchPetById('not_installed');
@@ -267,29 +267,29 @@ describe('petStore derived state', () => {
   it('announces a successful switch to an installed pet', () => {
     const store = usePetStore();
     store.availablePets = [
-      manifest('aether_mecha_core', 'cyber_tactical'),
-      manifest('nyx_abyssal_familiar', 'arcane_astrolabe'),
+      manifest('sakura_rin', 'cyber_tactical'),
+      manifest('guanlan', 'arcane_astrolabe'),
     ];
 
-    const outcome = store.switchPetById('nyx_abyssal_familiar');
+    const outcome = store.switchPetById('guanlan');
 
     expect(outcome).toEqual({ ok: true });
-    expect(store.currentPet?.id).toBe('nyx_abyssal_familiar');
+    expect(store.currentPet?.id).toBe('guanlan');
     expect(store.bubbleText).not.toContain('无法切换');
   });
 
   it('leaves an already-switched pet in place when a later switch is refused', () => {
     const store = usePetStore();
     store.availablePets = [
-      manifest('aether_mecha_core', 'A'),
-      manifest('nyx_abyssal_familiar', 'N'),
+      manifest('sakura_rin', 'A'),
+      manifest('guanlan', 'N'),
     ];
-    store.switchPetById('nyx_abyssal_familiar');
+    store.switchPetById('guanlan');
 
     store.switchPetById('ghost_pet');
 
-    expect(store.active_pet_id).toBe('nyx_abyssal_familiar');
-    expect(store.currentPet?.id).toBe('nyx_abyssal_familiar');
+    expect(store.active_pet_id).toBe('guanlan');
+    expect(store.currentPet?.id).toBe('guanlan');
   });
 
   it('merges pet, global and external menus into one tree', () => {
@@ -335,15 +335,22 @@ describe('petStore derived state', () => {
   });
 });
 
-const FALLBACK_ID = 'aether_mecha_core';
+// The placeholder the host falls back to when no package could be read. It is a
+// neutral id, not one of the shipped pets: a fallback that named a real pet would
+// claim that pet's identity while showing a different picture.
+const FALLBACK_ID = 'fallback_pet';
 const cmd = (i: number) => `/cmd-${i}`;
 
-function manifest(id: string, name: string): PetManifest {
+function manifest(id: string, name: string, themeId?: string): PetManifest {
   return {
     id,
     name,
     version: '1.0.0',
     type: 'sprite',
     model: { entry: `${id}.svg`, scale: 1, offset: { x: 0, y: 0 } },
+    // A palette belongs to the package: the host has no per-pet registry to look it up in.
+    ...(themeId
+      ? { theme: { id: themeId, name: themeId, primary: '#38bdf8', accent: '#f43f5e' } }
+      : {}),
   };
 }

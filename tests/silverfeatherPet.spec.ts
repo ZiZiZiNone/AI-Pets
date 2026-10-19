@@ -89,9 +89,9 @@ describe('silverfeather_chibi manifest', () => {
 
   it('has its own theme instead of falling back', () => {
     expect(manifest.theme?.id).toBe('silverplume_stream');
-    expect(resolvePetTheme(manifest.id, manifest.theme).id).toBe('silverplume_stream');
-    expect(resolvePetTheme(manifest.id, manifest.theme).primary).toBe('#a5b4fc');
+    expect(resolvePetTheme(manifest.theme).id).toBe('silverplume_stream');
+    expect(resolvePetTheme(manifest.theme).primary).toBe('#a5b4fc');
     // Not registered in the built-in palette table any more: the manifest carries it.
-    expect(resolvePetTheme('silverfeather_chibi').id).toBe('cyber_tactical');
+    expect(resolvePetTheme().id).toBe('default');
   });
 });
