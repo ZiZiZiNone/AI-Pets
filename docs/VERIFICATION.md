@@ -1,6 +1,6 @@
 # Verification report
 
-Generated 2026-10-20 22:05:40 by `npm run verify`. Every number below is captured from a real run of
+Generated 2026-10-21 01:32:46 by `npm run verify`. Every number below is captured from a real run of
 the command shown beside it — regenerate with `npm run verify` to reproduce.
 
 ## 1. PE forensics — release binary
@@ -11,7 +11,7 @@ path as a literal byte sequence inside the image.
 
 | field | value |
 | --- | --- |
-| size on disk | 260,191,313 bytes (248.14 MiB) |
+| size on disk | 260,192,974 bytes (248.14 MiB) |
 | DOS signature | `MZ` |
 | PE signature | `50 45 00 00` |
 | machine | `0x8664` (x86-64) |
@@ -22,7 +22,7 @@ path as a literal byte sequence inside the image.
 | DEP (NX_COMPAT) | yes |
 | HIGH_ENTROPY_VA | yes |
 | sections | `.text` `.data` `.rdata` `.pdata` `.xdata` `.bss` `.idata` `.tls` `.rsrc` `.reloc` |
-| import directory | RVA `0xEED4000`, 39 DLL entries |
+| import directory | RVA `0xEED5000`, 39 DLL entries |
 
 Import table detail:
 
@@ -76,23 +76,49 @@ dist files: **653** · present in binary as literal asset path: **653** · missi
 
 - every dist asset path is embedded in the executable
 
-binary freshness: the executable is newer than all 653 `dist/` files (linked 2026-10-20 21:45:59), so the path table describes this bundle.
+binary freshness: the executable is newer than all 653 `dist/` files (linked 2026-10-21 01:32:00), so the path table describes this bundle.
 
-gzip streams in image: **2224** — asset bodies are stored compressed, so file contents are not greppable as plaintext; the path table above is the reliable indicator.
+gzip streams in image: **2257** — asset bodies are stored compressed, so file contents are not greppable as plaintext; the path table above is the reliable indicator.
 
 ## 2. Working tree vs HEAD
 
-tracked files modified: **0** · untracked paths: **0** · **0** insertions / **0** deletions
+tracked files modified: **21** · untracked paths: **7** · **623** insertions / **175** deletions
 
 Untracked additions:
 
-
+- `scripts/hud-smoke.py`
+- `scripts/mic-smoke.py`
+- `scripts/stage-smoke.py`
+- `src/utils/continuousVoice.ts`
+- `src/utils/hudHit.ts`
+- `tests/continuousVoice.spec.ts`
+- `tests/hudHit.spec.ts`
 
 Per-file diffstat:
 
 | file | + | - |
 | --- | --- | --- |
-
+| `config/settings.yaml` | 7 | 3 |
+| `docs/VERIFICATION.md` | 97 | 51 |
+| `"docs/\344\275\277\347\224\250\350\257\264\346\230\216\344\271\246.md"` | 59 | 35 |
+| `scripts/runtime-smoke.py` | 32 | 10 |
+| `src/App.vue` | 61 | 11 |
+| `src/adapters/IPetAdapter.ts` | 8 | 0 |
+| `src/adapters/SpriteAdapter.ts` | 31 | 8 |
+| `src/companion/CompanionApp.vue` | 10 | 0 |
+| `src/companion/PodsTab.vue` | 16 | 17 |
+| `src/companion/SduiWidgetView.vue` | 4 | 0 |
+| `src/components/PetCanvasStage.vue` | 34 | 4 |
+| `src/components/RadialMenu.vue` | 24 | 0 |
+| `src/components/StageHudDock.vue` | 64 | 22 |
+| `src/types/pet.d.ts` | 9 | 0 |
+| `src/utils/audioCapture.ts` | 9 | 2 |
+| `src/utils/sduiEffects.ts` | 6 | 1 |
+| `src/utils/stageWindow.ts` | 87 | 7 |
+| `src/utils/yamlLoader.ts` | 5 | 1 |
+| `tests/sduiEffects.spec.ts` | 3 | 0 |
+| `tests/stageWindow.spec.ts` | 52 | 0 |
+| `tests/voiceBridge.spec.ts` | 5 | 3 |
 
 HEAD-vs-working line counts:
 
@@ -111,8 +137,8 @@ tsconfig emit-related options:
 
 | measurement | value |
 | --- | --- |
-| files under src/tests/scripts before | 73 |
-| files under src/tests/scripts after | 73 |
+| files under src/tests/scripts before | 80 |
+| files under src/tests/scripts after | 80 |
 | delta | 0 |
 | `*.tsbuildinfo` anywhere in repo | 0 |
 | exit code | 0 |
@@ -124,15 +150,15 @@ tsconfig emit-related options:
 
 ## 4. Static dead-export scan
 
-files scanned: **52 `.ts` + 14 `.vue` = 66**
+files scanned: **56 `.ts` + 14 `.vue` = 70**
 
-> `src/**` alone is 33 `.ts` + 14 `.vue` = 47 files;
-> `tests/**` adds 19 spec files, so the scan covers 66
+> `src/**` alone is 35 `.ts` + 14 `.vue` = 49 files;
+> `tests/**` adds 21 spec files, so the scan covers 70
 > — a superset of either count.
 
 ```
-files scanned : 66  (src/** + tests/**)
-exported names: 255
+files scanned : 70  (src/** + tests/**)
+exported names: 263
 dead exports  : 0
 internal-only : 0
 
@@ -151,8 +177,8 @@ to the emitted JS. A value cycle fails the build; a cycle whose back-edges are a
 `import type` is erased by TypeScript and is reported for review only.
 
 ```
-modules scanned   : 66  (src/** + tests/**)
-edges resolved    : 198
+modules scanned   : 70  (src/** + tests/**)
+edges resolved    : 207
 value cycles      : 0
 type-only cycles  : 1
 unresolved imports: 0
@@ -179,55 +205,55 @@ Rust unit tests: **106 passed, 0 failed**.
 ```
 test action_executor::tests::a_panel_host_failure_is_reported_rather_than_swallowed ... ok
 test action_executor::tests::a_panel_action_without_a_mode_defaults_to_schema ... ok
-test action_executor::tests::a_panel_missing_the_source_its_mode_needs_is_refused_before_anything_opens ... ok
 test action_executor::tests::a_panel_action_carries_its_schema_across_the_boundary ... ok
+test action_executor::tests::a_panel_missing_the_source_its_mode_needs_is_refused_before_anything_opens ... ok
 test action_executor::tests::a_url_panel_carries_its_url ... ok
 test action_executor::tests::a_missing_pets_root_refuses_every_switch_instead_of_succeeding_blindly ... ok
 test action_executor::tests::an_over_long_pet_id_is_refused_by_shape_not_by_length_of_a_list ... ok
 test action_executor::tests::an_unrecognised_panel_mode_is_not_forwarded_as_written ... ok
 test action_executor::tests::a_file_masquerading_as_a_pet_folder_does_not_satisfy_the_switch ... ok
 test action_executor::tests::allowed_emotions_are_accepted ... ok
+test action_executor::tests::a_well_shaped_id_with_no_folder_is_refused_with_its_name ... ok
 test action_executor::tests::unknown_action_type_is_dispatched_not_executed ... ok
 test action_executor::tests::unknown_action_id_does_not_deserialize ... ok
-test action_executor::tests::the_unknown_pet_message_names_the_directory_that_was_searched ... ok
-test action_executor::tests::pomodoro_falls_back_to_twenty_five_minutes ... ok
-test action_executor::tests::unit_variants_execute ... ok
+test action_executor::tests::a_traversal_attempt_cannot_reach_a_sibling_of_the_pets_root ... ok
 test action_executor::tests::the_rejection_message_escapes_control_characters ... ok
 test action_executor::tests::emotion_outside_the_whitelist_is_rejected ... ok
-test action_executor::tests::a_traversal_attempt_cannot_reach_a_sibling_of_the_pets_root ... ok
-test engine_runner::tests::a_non_base64_payload_is_rejected ... ok
+test action_executor::tests::unit_variants_execute ... ok
 test action_executor::tests::a_folder_without_a_manifest_is_not_a_switchable_pet ... ok
-test action_executor::tests::a_well_shaped_id_with_no_folder_is_refused_with_its_name ... ok
-test engine_runner::tests::an_empty_executable_path_is_rejected_before_spawning ... ok
+test action_executor::tests::the_unknown_pet_message_names_the_directory_that_was_searched ... ok
+test action_executor::tests::pomodoro_falls_back_to_twenty_five_minutes ... ok
 test action_executor::tests::unknown_pet_is_rejected ... ok
-test engine_runner::tests::an_illegal_capture_extension_is_rejected ... ok
 test engine_runner::tests::a_glob_matching_nothing_names_the_directory_it_looked_in ... ok
-test engine_runner::tests::a_missing_executable_is_a_readable_error ... ok
-test engine_runner::tests::a_flag_prefixed_glob_resolves_against_the_value_not_the_whole_argument ... ok
+test engine_runner::tests::a_non_base64_payload_is_rejected ... ok
 test action_executor::tests::a_pet_added_as_a_folder_is_switched_to_without_a_code_change ... ok
+test engine_runner::tests::a_flag_prefixed_glob_resolves_against_the_value_not_the_whole_argument ... ok
+test engine_runner::tests::an_empty_executable_path_is_rejected_before_spawning ... ok
+test engine_runner::tests::an_illegal_capture_extension_is_rejected ... ok
+test engine_runner::tests::a_missing_executable_is_a_readable_error ... ok
 test engine_runner::tests::a_model_glob_never_matches_a_directory ... ok
 test engine_runner::tests::capturing_output_without_a_placeholder_is_rejected ... ok
-test engine_runner::tests::a_model_glob_resolves_to_the_first_file_in_name_order ... ok
+test action_executor::tests::installed_pets_are_accepted ... ok
 test engine_runner::tests::extension_sanitising_accepts_the_forms_configs_actually_use ... ok
 test engine_runner::tests::mime_types_cover_the_formats_speech_endpoints_return ... ok
-test action_executor::tests::installed_pets_are_accepted ... ok
+test engine_runner::tests::a_model_glob_resolves_to_the_first_file_in_name_order ... ok
 test engine_runner::tests::an_engine_that_writes_nothing_is_a_failure_not_silent_success ... ok
-test engine_runner::tests::an_input_payload_becomes_a_readable_file_at_the_placeholder ... ok
+test engine_runner::tests::captures_stderr_separately ... ok
 test engine_runner::tests::oversized_audio_payload_is_rejected ... ok
 test engine_runner::tests::oversized_stdin_is_rejected ... ok
 test engine_runner::tests::placeholder_substitution_touches_only_the_placeholder ... ok
-test engine_runner::tests::an_input_placeholder_written_on_disk_is_deleted_after_the_run ... ok
-test engine_runner::tests::text_containing_a_star_is_not_treated_as_a_path_pattern ... ok
-test engine_runner::tests::captures_stderr_separately ... ok
 test engine_runner::tests::captures_stdout_and_reports_success ... ok
+test engine_runner::tests::text_containing_a_star_is_not_treated_as_a_path_pattern ... ok
+test engine_runner::tests::empty_output_still_returns_a_result ... ok
+test engine_runner::tests::an_input_placeholder_written_on_disk_is_deleted_after_the_run ... ok
 test pet_packages::tests::a_bare_dash_is_not_a_path ... ok
 test pet_packages::tests::a_bare_directory_is_not_an_installed_package ... ok
 test pet_packages::tests::a_block_sequence_is_read_in_order ... ok
 test pet_packages::tests::a_folder_without_a_manifest_is_not_a_package ... ok
 test pet_packages::tests::a_malformed_list_is_tolerated_rather_than_fatal ... ok
-test engine_runner::tests::empty_output_still_returns_a_result ... ok
-test pet_packages::tests::a_package_is_found_under_any_root ... ok
 test pet_packages::tests::a_missing_root_is_skipped_rather_than_fatal ... ok
+test pet_packages::tests::a_package_is_found_under_any_root ... ok
+test engine_runner::tests::an_input_payload_becomes_a_readable_file_at_the_placeholder ... ok
 test pet_packages::tests::a_quoted_entry_keeps_a_hash_inside_it ... ok
 test pet_packages::tests::an_absent_key_yields_nothing ... ok
 test pet_packages::tests::an_empty_inline_list_yields_nothing ... ok
@@ -252,12 +278,12 @@ test win32_window::tests::disabling_removes_mask_bits_the_original_had ... ok
 test win32_window::tests::enabling_is_idempotent ... ok
 test win32_window::tests::enabling_sets_every_bit_in_the_mask ... ok
 test win32_window::tests::round_trip_returns_the_original_style ... ok
-test engine_runner::tests::no_shell_means_metacharacters_are_not_interpreted ... ok
-test ws_server::tests::a_disconnect_releases_only_the_connection_that_held_the_lease ... ok
 test ws_server::tests::a_claim_installs_the_holder_and_reports_the_change_once ... ok
+test ws_server::tests::a_disconnect_releases_only_the_connection_that_held_the_lease ... ok
 test ws_server::tests::a_header_that_is_not_visible_ascii_is_not_trusted ... ok
 test ws_server::tests::a_host_that_merely_starts_with_an_allowed_one_is_rejected ... ok
 test ws_server::tests::a_later_claim_displaces_the_earlier_driver ... ok
+test engine_runner::tests::no_shell_means_metacharacters_are_not_interpreted ... ok
 test ws_server::tests::an_unwritable_candidate_is_absent_from_the_owned_list ... ok
 test pet_packages::tests::the_first_root_to_claim_an_id_keeps_it ... ok
 test ws_server::tests::authorize_accepts_only_the_exact_token ... ok
@@ -265,25 +291,25 @@ test ws_server::tests::authorize_rejects_missing_wrong_and_near_miss_tokens ... 
 test ws_server::tests::consecutive_tokens_differ ... ok
 test ws_server::tests::no_writable_candidate_leaves_the_token_unplaced ... ok
 test ws_server::tests::only_the_holder_can_release_the_lease ... ok
-test ws_server::tests::the_declared_origins_are_allowed ... ok
 test ws_server::tests::origins_outside_the_declared_set_are_rejected ... ok
+test ws_server::tests::the_declared_origins_are_allowed ... ok
 test ws_server::tests::token_does_not_leak_the_process_id ... ok
 test ws_server::tests::token_has_the_documented_shape ... ok
 test ws_server::tests::a_token_that_cannot_be_written_beside_the_working_directory_moves_on ... ok
+test engine_runner::tests::non_zero_exit_is_reported_not_swallowed ... ok
 test ws_server::tests::tokens_from_two_brokers_are_not_interchangeable ... ok
 test ws_server::tests::userinfo_cannot_masquerade_as_a_local_host ... ok
-test engine_runner::tests::non_zero_exit_is_reported_not_swallowed ... ok
 test ws_server::tests::token_is_written_to_the_supplied_path ... ok
 test ws_server::tests::the_token_is_written_to_every_writable_candidate_not_just_the_first ... ok
 test engine_runner::tests::a_shared_temp_path_is_not_reused_between_calls ... ok
-test engine_runner::tests::a_large_stdout_does_not_deadlock ... ok
 test engine_runner::tests::the_captured_output_file_is_returned_as_base64 ... ok
+test engine_runner::tests::a_large_stdout_does_not_deadlock ... ok
 test engine_runner::tests::timeout_is_clamped_to_the_ceiling ... ok
 test engine_runner::tests::stdin_is_delivered_and_closed ... ok
-test engine_runner::tests::an_overrunning_engine_is_killed_not_waited_on ... ok
 test engine_runner::tests::a_timed_out_engine_leaves_nothing_holding_its_pipes ... ok
+test engine_runner::tests::an_overrunning_engine_is_killed_not_waited_on ... ok
 test engine_runner::tests::output_collection_does_not_outlive_a_pipe_held_by_a_grandchild ... ok
-test result: ok. 106 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.70s
+test result: ok. 106 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.69s
 ```
 
 ## 7. Per-file diff
@@ -293,4 +319,24 @@ additionally read line-by-line; the substantive hunks are summarised after it.
 
 | file | + | - |
 | --- | --- | --- |
-
+| `config/settings.yaml` | 7 | 3 |
+| `docs/VERIFICATION.md` | 97 | 51 |
+| `"docs/\344\275\277\347\224\250\350\257\264\346\230\216\344\271\246.md"` | 59 | 35 |
+| `scripts/runtime-smoke.py` | 32 | 10 |
+| `src/App.vue` | 61 | 11 |
+| `src/adapters/IPetAdapter.ts` | 8 | 0 |
+| `src/adapters/SpriteAdapter.ts` | 31 | 8 |
+| `src/companion/CompanionApp.vue` | 10 | 0 |
+| `src/companion/PodsTab.vue` | 16 | 17 |
+| `src/companion/SduiWidgetView.vue` | 4 | 0 |
+| `src/components/PetCanvasStage.vue` | 34 | 4 |
+| `src/components/RadialMenu.vue` | 24 | 0 |
+| `src/components/StageHudDock.vue` | 64 | 22 |
+| `src/types/pet.d.ts` | 9 | 0 |
+| `src/utils/audioCapture.ts` | 9 | 2 |
+| `src/utils/sduiEffects.ts` | 6 | 1 |
+| `src/utils/stageWindow.ts` | 87 | 7 |
+| `src/utils/yamlLoader.ts` | 5 | 1 |
+| `tests/sduiEffects.spec.ts` | 3 | 0 |
+| `tests/stageWindow.spec.ts` | 52 | 0 |
+| `tests/voiceBridge.spec.ts` | 5 | 3 |
