@@ -85,9 +85,9 @@ hit_areas:
 - name: head
   label: 推她的眼镜
   rect:
-    x: 90
+    x: 71
     y: 13
-    w: 141
+    w: 177
     h: 105
   motion: pat
   expression: neutral
@@ -97,9 +97,9 @@ hit_areas:
 - name: body
   label: 翻她的卷宗
   rect:
-    x: 90
+    x: 71
     y: 118
-    w: 141
+    w: 177
     h: 215
   motion: happy
   expression: surprised
@@ -184,5 +184,5 @@ ai_pets:
     - small_talk
   body_design:
     age_group: adult
-    height_in_heads: 3.6
-    measurement: 成年女性三点六头身，深蓝西装外套配白衬衫
+    height_in_heads: 3.2
+    measurement: 成年女性三点二头身，深蓝西装外套配白衬衫

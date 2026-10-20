@@ -85,9 +85,9 @@ hit_areas:
 - name: head
   label: 碰她的发夹
   rect:
-    x: 93
+    x: 79
     y: 13
-    w: 133
+    w: 163
     h: 105
   motion: pat
   expression: smile
@@ -97,9 +97,9 @@ hit_areas:
 - name: body
   label: 看她红笔批的稿
   rect:
-    x: 93
+    x: 79
     y: 118
-    w: 133
+    w: 163
     h: 215
   motion: happy
   expression: surprised
@@ -184,5 +184,5 @@ ai_pets:
     - small_talk
   body_design:
     age_group: adult
-    height_in_heads: 3.6
-    measurement: 成年女性三点六头身，深蓝针织开衫配灰衬衫
+    height_in_heads: 3.2
+    measurement: 成年女性三点二头身，深蓝针织开衫配灰衬衫

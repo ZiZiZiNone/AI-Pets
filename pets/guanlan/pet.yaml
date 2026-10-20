@@ -84,9 +84,9 @@ hit_areas:
 - name: head
   label: 扶正眼镜
   rect:
-    x: 112
+    x: 88
     y: 13
-    w: 96
+    w: 144
     h: 105
   motion: pat
   expression: smile
@@ -96,9 +96,9 @@ hit_areas:
 - name: body
   label: 拍一下肩
   rect:
-    x: 112
+    x: 88
     y: 118
-    w: 96
+    w: 144
     h: 215
   motion: happy
   expression: surprised
@@ -183,5 +183,5 @@ ai_pets:
     - small_talk
   body_design:
     age_group: adult
-    height_in_heads: 3.6
-    measurement: 成年女性三点六头身，深蓝西装与铅笔裙，职业造型。
+    height_in_heads: 3.2
+    measurement: 成年女性三点二头身，深蓝西装与铅笔裙，职业造型。

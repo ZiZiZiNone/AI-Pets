@@ -85,9 +85,9 @@ hit_areas:
 - name: head
   label: 理一理鬓发
   rect:
-    x: 92
+    x: 85
     y: 13
-    w: 135
+    w: 149
     h: 105
   motion: pat
   expression: smile
@@ -97,9 +97,9 @@ hit_areas:
 - name: body
   label: 靠一会儿
   rect:
-    x: 92
+    x: 85
     y: 118
-    w: 135
+    w: 149
     h: 215
   motion: happy
   expression: surprised
@@ -184,5 +184,5 @@ ai_pets:
     - small_talk
   body_design:
     age_group: adult
-    height_in_heads: 3.6
-    measurement: 成年女性三点六头身，炭灰长风衣与短款裤，雨夜便利店造型。
+    height_in_heads: 3.2
+    measurement: 成年女性三点二头身，炭灰长风衣与短款裤，雨夜便利店造型。
