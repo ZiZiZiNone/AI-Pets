@@ -85,9 +85,9 @@ hit_areas:
 - name: head
   label: 碰她的垂穗
   rect:
-    x: 71
+    x: 75
     y: 13
-    w: 177
+    w: 169
     h: 105
   motion: pat
   expression: surprised
@@ -97,9 +97,9 @@ hit_areas:
 - name: body
   label: 看她半起的面具
   rect:
-    x: 71
+    x: 75
     y: 118
-    w: 177
+    w: 169
     h: 215
   motion: happy
   expression: neutral

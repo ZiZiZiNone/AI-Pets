@@ -89,9 +89,9 @@ hit_areas:
 - name: head
   label: 碰她的大剪刀
   rect:
-    x: 79
+    x: 75
     y: 13
-    w: 163
+    w: 177
     h: 103
   motion: pat
   expression: smile
@@ -101,9 +101,9 @@ hit_areas:
 - name: body
   label: 问问大剪刀的事
   rect:
-    x: 79
+    x: 75
     y: 116
-    w: 163
+    w: 177
     h: 212
   motion: happy
   expression: surprised

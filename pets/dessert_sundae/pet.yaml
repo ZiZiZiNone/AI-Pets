@@ -90,9 +90,9 @@ hit_areas:
 - name: head
   label: 碰她的甜筒
   rect:
-    x: 100
+    x: 96
     y: 13
-    w: 119
+    w: 128
     h: 105
   motion: pat
   expression: smile
@@ -102,9 +102,9 @@ hit_areas:
 - name: body
   label: 问问甜筒的事
   rect:
-    x: 100
+    x: 96
     y: 118
-    w: 119
+    w: 128
     h: 215
   motion: happy
   expression: surprised

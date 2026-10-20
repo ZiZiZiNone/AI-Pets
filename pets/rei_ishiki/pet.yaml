@@ -85,9 +85,9 @@ hit_areas:
 - name: head
   label: 理一理鬓发
   rect:
-    x: 96
+    x: 92
     y: 13
-    w: 127
+    w: 135
     h: 105
   motion: pat
   expression: smile
@@ -97,9 +97,9 @@ hit_areas:
 - name: body
   label: 靠一会儿
   rect:
-    x: 96
+    x: 92
     y: 118
-    w: 127
+    w: 135
     h: 215
   motion: happy
   expression: surprised

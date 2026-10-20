@@ -85,9 +85,9 @@ hit_areas:
 - name: head
   label: 摘她的帽子
   rect:
-    x: 76
+    x: 59
     y: 13
-    w: 168
+    w: 201
     h: 105
   motion: pat
   expression: smile
@@ -97,9 +97,9 @@ hit_areas:
 - name: body
   label: 看她手里的卡带
   rect:
-    x: 76
+    x: 59
     y: 118
-    w: 168
+    w: 201
     h: 215
   motion: happy
   expression: surprised

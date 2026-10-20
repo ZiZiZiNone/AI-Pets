@@ -89,9 +89,9 @@ hit_areas:
 - name: head
   label: 碰她的沙图
   rect:
-    x: 76
+    x: 72
     y: 13
-    w: 168
+    w: 175
     h: 105
   motion: pat
   expression: smile
@@ -101,9 +101,9 @@ hit_areas:
 - name: body
   label: 问问沙图的事
   rect:
-    x: 76
+    x: 72
     y: 118
-    w: 168
+    w: 175
     h: 215
   motion: happy
   expression: surprised

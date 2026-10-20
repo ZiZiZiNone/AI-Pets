@@ -85,9 +85,9 @@ hit_areas:
 - name: head
   label: 碰发簪
   rect:
-    x: 56
+    x: 60
     y: 13
-    w: 207
+    w: 200
     h: 105
   motion: pat
   expression: neutral
@@ -97,9 +97,9 @@ hit_areas:
 - name: body
   label: 看她裙摆
   rect:
-    x: 56
+    x: 60
     y: 118
-    w: 207
+    w: 200
     h: 215
   motion: happy
   expression: surprised

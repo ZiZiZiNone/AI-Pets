@@ -103,9 +103,9 @@ hit_areas:
 - name: head
   label: 碰她的星图
   rect:
-    x: 59
+    x: 58
     y: 13
-    w: 201
+    w: 204
     h: 105
   motion: pat
   expression: smile
@@ -115,9 +115,9 @@ hit_areas:
 - name: body
   label: 问问星图的事
   rect:
-    x: 59
+    x: 58
     y: 118
-    w: 201
+    w: 204
     h: 215
   motion: happy
   expression: surprised

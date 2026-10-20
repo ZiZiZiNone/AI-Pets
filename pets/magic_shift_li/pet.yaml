@@ -89,10 +89,10 @@ hit_areas:
 - name: head
   label: 碰她的银镜
   rect:
-    x: 79
-    y: 18
-    w: 175
-    h: 103
+    x: 70
+    y: 13
+    w: 179
+    h: 105
   motion: pat
   expression: smile
   texts:
@@ -101,10 +101,10 @@ hit_areas:
 - name: body
   label: 问问银镜的事
   rect:
-    x: 79
-    y: 121
-    w: 175
-    h: 212
+    x: 70
+    y: 118
+    w: 179
+    h: 215
   motion: happy
   expression: surprised
   texts:

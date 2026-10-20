@@ -85,9 +85,9 @@ hit_areas:
 - name: head
   label: 碰她的虎耳
   rect:
-    x: 69
+    x: 79
     y: 13
-    w: 183
+    w: 163
     h: 105
   motion: pat
   expression: surprised
@@ -97,9 +97,9 @@ hit_areas:
 - name: body
   label: 看她握剑的手
   rect:
-    x: 69
+    x: 79
     y: 118
-    w: 183
+    w: 163
     h: 215
   motion: happy
   expression: neutral

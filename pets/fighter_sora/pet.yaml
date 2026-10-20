@@ -85,9 +85,9 @@ hit_areas:
 - name: head
   label: 碰绷带
   rect:
-    x: 100
+    x: 102
     y: 13
-    w: 120
+    w: 115
     h: 105
   motion: pat
   expression: neutral
@@ -97,9 +97,9 @@ hit_areas:
 - name: body
   label: 看她出拳
   rect:
-    x: 100
+    x: 102
     y: 118
-    w: 120
+    w: 115
     h: 215
   motion: happy
   expression: surprised

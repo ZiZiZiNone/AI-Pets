@@ -104,10 +104,10 @@ hit_areas:
 - name: head
   label: 碰她的鸣声卷轴
   rect:
-    x: 75
+    x: 67
     y: 13
-    w: 171
-    h: 101
+    w: 185
+    h: 102
   motion: pat
   expression: smile
   texts:
@@ -116,10 +116,10 @@ hit_areas:
 - name: body
   label: 问问鸣声卷轴的事
   rect:
-    x: 75
-    y: 114
-    w: 171
-    h: 209
+    x: 67
+    y: 115
+    w: 185
+    h: 210
   motion: happy
   expression: surprised
   texts:

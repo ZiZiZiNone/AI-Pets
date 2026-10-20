@@ -103,9 +103,9 @@ hit_areas:
 - name: head
   label: 碰她的铜锅
   rect:
-    x: 91
+    x: 81
     y: 13
-    w: 137
+    w: 157
     h: 105
   motion: pat
   expression: smile
@@ -115,9 +115,9 @@ hit_areas:
 - name: body
   label: 问问铜锅的事
   rect:
-    x: 91
+    x: 81
     y: 118
-    w: 137
+    w: 157
     h: 215
   motion: happy
   expression: surprised

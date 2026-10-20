@@ -89,9 +89,9 @@ hit_areas:
 - name: head
   label: 碰她的号牌
   rect:
-    x: 75
+    x: 68
     y: 13
-    w: 170
+    w: 184
     h: 105
   motion: pat
   expression: smile
@@ -101,9 +101,9 @@ hit_areas:
 - name: body
   label: 问问号牌的事
   rect:
-    x: 75
+    x: 68
     y: 118
-    w: 170
+    w: 184
     h: 215
   motion: happy
   expression: surprised

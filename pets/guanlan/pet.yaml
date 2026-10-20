@@ -84,9 +84,9 @@ hit_areas:
 - name: head
   label: 扶正眼镜
   rect:
-    x: 110
+    x: 112
     y: 13
-    w: 99
+    w: 96
     h: 105
   motion: pat
   expression: smile
@@ -96,9 +96,9 @@ hit_areas:
 - name: body
   label: 拍一下肩
   rect:
-    x: 110
+    x: 112
     y: 118
-    w: 99
+    w: 96
     h: 215
   motion: happy
   expression: surprised

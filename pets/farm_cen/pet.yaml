@@ -105,7 +105,7 @@ hit_areas:
   rect:
     x: 103
     y: 13
-    w: 113
+    w: 114
     h: 105
   motion: pat
   expression: smile
@@ -117,7 +117,7 @@ hit_areas:
   rect:
     x: 103
     y: 118
-    w: 113
+    w: 114
     h: 215
   motion: happy
   expression: surprised

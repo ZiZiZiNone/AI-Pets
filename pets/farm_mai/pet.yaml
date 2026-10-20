@@ -89,9 +89,9 @@ hit_areas:
 - name: head
   label: 碰她的谷袋
   rect:
-    x: 76
+    x: 85
     y: 13
-    w: 168
+    w: 149
     h: 105
   motion: pat
   expression: smile
@@ -101,9 +101,9 @@ hit_areas:
 - name: body
   label: 问问谷袋的事
   rect:
-    x: 76
+    x: 85
     y: 118
-    w: 168
+    w: 149
     h: 215
   motion: happy
   expression: surprised

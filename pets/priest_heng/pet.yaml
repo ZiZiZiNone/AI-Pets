@@ -4,7 +4,7 @@ alias: heng
 cluster: 节庆祭典
 version: 2.0.0
 type: sprite
-description: 庙祝，一年到头在同座庙里，哪盏灯该添油他最清楚
+description: 庙祝，一年到头在同座庙里，哪盏灯该添油她最清楚
 model:
   entry: idle.png
   scale: 1.0
@@ -85,10 +85,10 @@ hit_areas:
 - name: head
   label: 理她的僧帽
   rect:
-    x: 50
-    y: 14
-    w: 220
-    h: 104
+    x: 65
+    y: 13
+    w: 190
+    h: 105
   motion: pat
   expression: neutral
   texts:
@@ -97,9 +97,9 @@ hit_areas:
 - name: body
   label: 看她手里的拂尘
   rect:
-    x: 50
+    x: 65
     y: 118
-    w: 220
+    w: 190
     h: 215
   motion: happy
   expression: smile

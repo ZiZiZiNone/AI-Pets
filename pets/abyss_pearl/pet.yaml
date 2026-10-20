@@ -89,10 +89,10 @@ hit_areas:
 - name: head
   label: 碰她的珍珠
   rect:
-    x: 79
+    x: 70
     y: 13
-    w: 163
-    h: 99
+    w: 181
+    h: 102
   motion: pat
   expression: smile
   texts:
@@ -101,10 +101,10 @@ hit_areas:
 - name: body
   label: 问问珍珠的事
   rect:
-    x: 79
-    y: 112
-    w: 163
-    h: 206
+    x: 70
+    y: 115
+    w: 181
+    h: 209
   motion: happy
   expression: surprised
   texts:

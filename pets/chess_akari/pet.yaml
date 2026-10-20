@@ -85,9 +85,9 @@ hit_areas:
 - name: head
   label: 碰棋子盒
   rect:
-    x: 108
+    x: 106
     y: 13
-    w: 104
+    w: 108
     h: 105
   motion: pat
   expression: neutral
@@ -97,9 +97,9 @@ hit_areas:
 - name: body
   label: 看棋盘
   rect:
-    x: 108
+    x: 106
     y: 118
-    w: 104
+    w: 108
     h: 215
   motion: happy
   expression: surprised

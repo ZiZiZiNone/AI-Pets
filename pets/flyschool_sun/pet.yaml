@@ -89,9 +89,9 @@ hit_areas:
 - name: head
   label: 碰她的帽檐
   rect:
-    x: 96
+    x: 90
     y: 13
-    w: 128
+    w: 141
     h: 105
   motion: pat
   expression: smile
@@ -101,9 +101,9 @@ hit_areas:
 - name: body
   label: 问问帽檐的事
   rect:
-    x: 96
+    x: 90
     y: 118
-    w: 128
+    w: 141
     h: 215
   motion: happy
   expression: surprised

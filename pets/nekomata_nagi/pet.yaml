@@ -85,10 +85,10 @@ hit_areas:
 - name: head
   label: 抚耳尖
   rect:
-    x: 69
-    y: 13
-    w: 181
-    h: 105
+    x: 76
+    y: 18
+    w: 179
+    h: 103
   motion: pat
   expression: surprised
   texts:
@@ -97,10 +97,10 @@ hit_areas:
 - name: body
   label: 碰她的尾巴
   rect:
-    x: 69
-    y: 118
-    w: 181
-    h: 215
+    x: 76
+    y: 121
+    w: 179
+    h: 212
   motion: happy
   expression: smile
   texts:

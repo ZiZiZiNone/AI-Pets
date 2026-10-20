@@ -4,7 +4,7 @@ alias: shika
 cluster: 治愈日常
 version: 2.0.0
 type: sprite
-description: 旧书店老板，进门不看书的人他反而最欢迎
+description: 旧书店老板，进门不看书的人她反而最欢迎
 model:
   entry: idle.png
   scale: 1.0
@@ -85,9 +85,9 @@ hit_areas:
 - name: head
   label: 扶眼镜
   rect:
-    x: 107
+    x: 93
     y: 13
-    w: 114
+    w: 138
     h: 102
   motion: pat
   expression: smile
@@ -97,10 +97,10 @@ hit_areas:
 - name: body
   label: 看她抽书
   rect:
-    x: 107
+    x: 93
     y: 115
-    w: 114
-    h: 209
+    w: 138
+    h: 211
   motion: happy
   expression: surprised
   texts:

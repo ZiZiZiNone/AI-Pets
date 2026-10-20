@@ -85,9 +85,9 @@ hit_areas:
 - name: head
   label: 擦她的护目镜
   rect:
-    x: 81
+    x: 82
     y: 13
-    w: 157
+    w: 155
     h: 105
   motion: pat
   expression: neutral
@@ -97,9 +97,9 @@ hit_areas:
 - name: body
   label: 看她腰间的电台
   rect:
-    x: 81
+    x: 82
     y: 118
-    w: 157
+    w: 155
     h: 215
   motion: happy
   expression: surprised

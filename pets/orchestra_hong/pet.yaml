@@ -89,9 +89,9 @@ hit_areas:
 - name: head
   label: 碰她的指挥棒
   rect:
-    x: 68
+    x: 72
     y: 13
-    w: 185
+    w: 176
     h: 105
   motion: pat
   expression: smile
@@ -101,9 +101,9 @@ hit_areas:
 - name: body
   label: 问问指挥棒的事
   rect:
-    x: 68
+    x: 72
     y: 118
-    w: 185
+    w: 176
     h: 215
   motion: happy
   expression: surprised

@@ -85,9 +85,9 @@ hit_areas:
 - name: head
   label: 推她的眼镜
   rect:
-    x: 94
+    x: 90
     y: 13
-    w: 132
+    w: 141
     h: 105
   motion: pat
   expression: neutral
@@ -97,9 +97,9 @@ hit_areas:
 - name: body
   label: 翻她的卷宗
   rect:
-    x: 94
+    x: 90
     y: 118
-    w: 132
+    w: 141
     h: 215
   motion: happy
   expression: surprised

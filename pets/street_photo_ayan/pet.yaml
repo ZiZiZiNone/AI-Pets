@@ -85,10 +85,10 @@ hit_areas:
 - name: head
   label: 碰帽檐
   rect:
-    x: 117
-    y: 20
-    w: 128
-    h: 102
+    x: 98
+    y: 13
+    w: 123
+    h: 105
   motion: pat
   expression: neutral
   texts:
@@ -97,10 +97,10 @@ hit_areas:
 - name: body
   label: 看她的相机
   rect:
-    x: 117
-    y: 122
-    w: 128
-    h: 211
+    x: 98
+    y: 118
+    w: 123
+    h: 215
   motion: happy
   expression: surprised
   texts:

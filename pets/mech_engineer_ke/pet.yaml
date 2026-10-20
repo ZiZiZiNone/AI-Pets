@@ -85,9 +85,9 @@ hit_areas:
 - name: head
   label: 擦她脸上的油
   rect:
-    x: 86
+    x: 94
     y: 13
-    w: 148
+    w: 132
     h: 105
   motion: pat
   expression: neutral
@@ -97,9 +97,9 @@ hit_areas:
 - name: body
   label: 看她肩上的扳手
   rect:
-    x: 86
+    x: 94
     y: 118
-    w: 148
+    w: 132
     h: 215
   motion: happy
   expression: smile

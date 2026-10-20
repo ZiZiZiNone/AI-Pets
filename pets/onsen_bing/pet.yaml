@@ -103,9 +103,9 @@ hit_areas:
 - name: head
   label: 碰她的钢钎
   rect:
-    x: 71
+    x: 81
     y: 13
-    w: 178
+    w: 158
     h: 105
   motion: pat
   expression: smile
@@ -115,9 +115,9 @@ hit_areas:
 - name: body
   label: 问问钢钎的事
   rect:
-    x: 71
+    x: 81
     y: 118
-    w: 178
+    w: 158
     h: 215
   motion: happy
   expression: surprised

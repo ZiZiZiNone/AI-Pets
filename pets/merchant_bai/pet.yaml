@@ -85,9 +85,9 @@ hit_areas:
 - name: head
   label: 看她的金簪
   rect:
-    x: 90
+    x: 87
     y: 13
-    w: 141
+    w: 145
     h: 105
   motion: pat
   expression: neutral
@@ -97,9 +97,9 @@ hit_areas:
 - name: body
   label: 看她拨算盘
   rect:
-    x: 90
+    x: 87
     y: 118
-    w: 141
+    w: 145
     h: 215
   motion: happy
   expression: smile

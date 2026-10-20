@@ -89,9 +89,9 @@ hit_areas:
 - name: head
   label: 碰她的钥匙串
   rect:
-    x: 103
+    x: 97
     y: 13
-    w: 113
+    w: 126
     h: 105
   motion: pat
   expression: smile
@@ -101,9 +101,9 @@ hit_areas:
 - name: body
   label: 问问钥匙串的事
   rect:
-    x: 103
+    x: 97
     y: 118
-    w: 113
+    w: 126
     h: 215
   motion: happy
   expression: surprised

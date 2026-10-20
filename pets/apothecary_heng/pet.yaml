@@ -103,10 +103,10 @@ hit_areas:
 - name: head
   label: 碰她的药秤
   rect:
-    x: 100
+    x: 90
     y: 13
     w: 128
-    h: 103
+    h: 102
   motion: pat
   expression: smile
   texts:
@@ -115,10 +115,10 @@ hit_areas:
 - name: body
   label: 问问药秤的事
   rect:
-    x: 100
-    y: 116
+    x: 90
+    y: 115
     w: 128
-    h: 212
+    h: 211
   motion: happy
   expression: surprised
   texts:

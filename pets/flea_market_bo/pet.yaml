@@ -85,9 +85,9 @@ hit_areas:
 - name: head
   label: 扶眼镜
   rect:
-    x: 101
+    x: 98
     y: 13
-    w: 122
+    w: 131
     h: 103
   motion: pat
   expression: smile
@@ -97,9 +97,9 @@ hit_areas:
 - name: body
   label: 看她的旧物
   rect:
-    x: 101
+    x: 98
     y: 116
-    w: 122
+    w: 131
     h: 212
   motion: happy
   expression: surprised

@@ -103,9 +103,9 @@ hit_areas:
 - name: head
   label: 碰她的海图
   rect:
-    x: 99
+    x: 101
     y: 13
-    w: 123
+    w: 118
     h: 105
   motion: pat
   expression: smile
@@ -115,9 +115,9 @@ hit_areas:
 - name: body
   label: 问问海图的事
   rect:
-    x: 99
+    x: 101
     y: 118
-    w: 123
+    w: 118
     h: 215
   motion: happy
   expression: surprised

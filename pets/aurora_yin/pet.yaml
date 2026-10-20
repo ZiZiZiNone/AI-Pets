@@ -89,9 +89,9 @@ hit_areas:
 - name: head
   label: 碰她的信号铃
   rect:
-    x: 95
+    x: 89
     y: 13
-    w: 130
+    w: 143
     h: 105
   motion: pat
   expression: smile
@@ -101,9 +101,9 @@ hit_areas:
 - name: body
   label: 问问信号铃的事
   rect:
-    x: 95
+    x: 89
     y: 118
-    w: 130
+    w: 143
     h: 215
   motion: happy
   expression: surprised

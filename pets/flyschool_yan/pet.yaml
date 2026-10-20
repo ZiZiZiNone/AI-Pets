@@ -90,9 +90,9 @@ hit_areas:
 - name: head
   label: 碰她的飘带
   rect:
-    x: 62
+    x: 67
     y: 13
-    w: 195
+    w: 186
     h: 105
   motion: pat
   expression: smile
@@ -102,9 +102,9 @@ hit_areas:
 - name: body
   label: 问问飘带的事
   rect:
-    x: 62
+    x: 67
     y: 118
-    w: 195
+    w: 186
     h: 215
   motion: happy
   expression: surprised

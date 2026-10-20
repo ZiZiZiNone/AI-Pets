@@ -85,9 +85,9 @@ hit_areas:
 - name: head
   label: 碰她的发夹
   rect:
-    x: 98
+    x: 93
     y: 13
-    w: 124
+    w: 133
     h: 105
   motion: pat
   expression: smile
@@ -97,9 +97,9 @@ hit_areas:
 - name: body
   label: 看她红笔批的稿
   rect:
-    x: 98
+    x: 93
     y: 118
-    w: 124
+    w: 133
     h: 215
   motion: happy
   expression: surprised

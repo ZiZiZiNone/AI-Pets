@@ -89,9 +89,9 @@ hit_areas:
 - name: head
   label: 碰她的耳麦
   rect:
-    x: 87
+    x: 77
     y: 13
-    w: 145
+    w: 166
     h: 105
   motion: pat
   expression: smile
@@ -101,9 +101,9 @@ hit_areas:
 - name: body
   label: 问问耳麦的事
   rect:
-    x: 87
+    x: 77
     y: 118
-    w: 145
+    w: 166
     h: 215
   motion: happy
   expression: surprised

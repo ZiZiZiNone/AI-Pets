@@ -85,10 +85,10 @@ hit_areas:
 - name: head
   label: 看她的木簪
   rect:
-    x: 96
+    x: 92
     y: 13
-    w: 117
-    h: 101
+    w: 151
+    h: 102
   motion: pat
   expression: neutral
   texts:
@@ -97,10 +97,10 @@ hit_areas:
 - name: body
   label: 看她手中的铁壶
   rect:
-    x: 96
-    y: 114
-    w: 117
-    h: 208
+    x: 92
+    y: 115
+    w: 151
+    h: 210
   motion: happy
   expression: smile
   texts:

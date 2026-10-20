@@ -89,9 +89,9 @@ hit_areas:
 - name: head
   label: 碰她的发光套环
   rect:
-    x: 72
+    x: 68
     y: 13
-    w: 175
+    w: 184
     h: 105
   motion: pat
   expression: smile
@@ -101,9 +101,9 @@ hit_areas:
 - name: body
   label: 问问发光套环的事
   rect:
-    x: 72
+    x: 68
     y: 118
-    w: 175
+    w: 184
     h: 215
   motion: happy
   expression: surprised

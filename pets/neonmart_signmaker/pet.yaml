@@ -4,7 +4,7 @@ alias: njni
 cluster: 霓虹市集
 version: 2.0.0
 type: sprite
-description: 整条街的招牌都等着他这一根管子接上去才亮
+description: 整条街的招牌都等着她这一根管子接上去才亮
 model:
   entry: idle.png
   scale: 1.0
@@ -58,7 +58,7 @@ theme:
   subtext: '#d4e2ed'
   particleColor: '#80b8e5'
 persona:
-  identity: 你是霓，霓虹招牌工。整条街的招牌都等着他这一根管子接上去才亮
+  identity: 你是霓，霓虹招牌工。整条街的招牌都等着她这一根管子接上去才亮
   traits:
   - 专注
   - 手快
@@ -90,9 +90,9 @@ hit_areas:
 - name: head
   label: 碰她的灯管
   rect:
-    x: 74
+    x: 65
     y: 13
-    w: 171
+    w: 189
     h: 105
   motion: pat
   expression: smile
@@ -102,9 +102,9 @@ hit_areas:
 - name: body
   label: 问问灯管的事
   rect:
-    x: 74
+    x: 65
     y: 118
-    w: 171
+    w: 189
     h: 215
   motion: happy
   expression: surprised

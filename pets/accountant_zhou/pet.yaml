@@ -99,9 +99,9 @@ hit_areas:
 - name: head
   label: 拿走她耳后的笔
   rect:
-    x: 107
+    x: 102
     y: 13
-    w: 103
+    w: 110
     h: 103
   motion: pat
   expression: surprised
@@ -111,10 +111,10 @@ hit_areas:
 - name: body
   label: 看她拨算盘
   rect:
-    x: 107
+    x: 102
     y: 116
-    w: 103
-    h: 213
+    w: 110
+    h: 212
   motion: happy
   expression: neutral
   texts:

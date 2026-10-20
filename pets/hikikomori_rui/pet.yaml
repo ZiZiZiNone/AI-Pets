@@ -85,9 +85,9 @@ hit_areas:
 - name: head
   label: 碰她兜帽
   rect:
-    x: 58
+    x: 101
     y: 13
-    w: 204
+    w: 117
     h: 105
   motion: pat
   expression: surprised
@@ -97,9 +97,9 @@ hit_areas:
 - name: body
   label: 看她桌上的杯子
   rect:
-    x: 58
+    x: 101
     y: 118
-    w: 204
+    w: 117
     h: 215
   motion: happy
   expression: neutral

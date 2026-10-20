@@ -86,9 +86,9 @@ hit_areas:
 - name: head
   label: 碰她的发髻
   rect:
-    x: 69
+    x: 67
     y: 13
-    w: 181
+    w: 187
     h: 105
   motion: pat
   expression: surprised
@@ -98,9 +98,9 @@ hit_areas:
 - name: body
   label: 看她捞金鱼
   rect:
-    x: 69
+    x: 67
     y: 118
-    w: 181
+    w: 187
     h: 215
   motion: happy
   expression: smile

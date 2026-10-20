@@ -84,9 +84,9 @@ hit_areas:
 - name: head
   label: 拂过发梢
   rect:
-    x: 61
+    x: 63
     y: 13
-    w: 197
+    w: 194
     h: 105
   motion: pat
   expression: smile
@@ -96,9 +96,9 @@ hit_areas:
 - name: body
   label: 扶住肩膀
   rect:
-    x: 61
+    x: 63
     y: 118
-    w: 197
+    w: 194
     h: 215
   motion: happy
   expression: surprised

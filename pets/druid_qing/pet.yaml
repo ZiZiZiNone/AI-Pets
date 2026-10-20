@@ -85,10 +85,10 @@ hit_areas:
 - name: head
   label: 看她的枝角
   rect:
-    x: 80
+    x: 85
     y: 13
-    w: 166
-    h: 102
+    w: 163
+    h: 103
   motion: pat
   expression: smile
   texts:
@@ -97,9 +97,9 @@ hit_areas:
 - name: body
   label: 看她藤编的披肩
   rect:
-    x: 80
-    y: 115
-    w: 166
+    x: 85
+    y: 116
+    w: 163
     h: 212
   motion: happy
   expression: surprised

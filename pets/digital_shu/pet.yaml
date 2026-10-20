@@ -85,9 +85,9 @@ hit_areas:
 - name: head
   label: 碰她的耳后
   rect:
-    x: 59
+    x: 49
     y: 13
-    w: 203
+    w: 222
     h: 105
   motion: pat
   expression: neutral
@@ -97,9 +97,9 @@ hit_areas:
 - name: body
   label: 看她空着的杯子
   rect:
-    x: 59
+    x: 49
     y: 118
-    w: 203
+    w: 222
     h: 215
   motion: happy
   expression: surprised

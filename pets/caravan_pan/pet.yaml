@@ -89,10 +89,10 @@ hit_areas:
 - name: head
   label: 碰她的队旗
   rect:
-    x: 74
-    y: 13
-    w: 171
-    h: 105
+    x: 84
+    y: 23
+    w: 159
+    h: 101
   motion: pat
   expression: smile
   texts:
@@ -101,10 +101,10 @@ hit_areas:
 - name: body
   label: 问问队旗的事
   rect:
-    x: 74
-    y: 118
-    w: 171
-    h: 215
+    x: 84
+    y: 125
+    w: 159
+    h: 209
   motion: happy
   expression: surprised
   texts:

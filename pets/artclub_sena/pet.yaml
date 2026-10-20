@@ -16,40 +16,40 @@ model:
     idle:
       file: idle_strip.png
       loop: true
-      frames: 9
+      frames: 3
       fps: 12
     happy:
       file: idle_strip.png
       loop: false
       duration_ms: 2400
-      frames: 9
+      frames: 3
       fps: 12
     pat:
       file: idle_strip.png
       loop: false
       duration_ms: 1900
-      frames: 9
+      frames: 3
       fps: 12
     feed:
       file: idle_strip.png
       loop: false
       duration_ms: 2600
-      frames: 9
+      frames: 3
       fps: 12
     drag:
       file: idle_strip.png
       loop: true
-      frames: 9
+      frames: 3
       fps: 12
     climb:
       file: idle_strip.png
       loop: true
-      frames: 9
+      frames: 3
       fps: 12
     sleep:
       file: idle_strip.png
       loop: true
-      frames: 9
+      frames: 3
       fps: 12
 expressions:
   neutral:
@@ -99,9 +99,9 @@ hit_areas:
 - name: head
   label: 擦掉脸上的颜料
   rect:
-    x: 91
+    x: 79
     y: 13
-    w: 139
+    w: 161
     h: 105
   motion: pat
   expression: surprised
@@ -111,9 +111,9 @@ hit_areas:
 - name: body
   label: 看她的画布
   rect:
-    x: 91
+    x: 79
     y: 118
-    w: 139
+    w: 161
     h: 215
   motion: happy
   expression: neutral

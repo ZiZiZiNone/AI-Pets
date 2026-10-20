@@ -86,9 +86,9 @@ hit_areas:
 - name: head
   label: 理她的高马尾
   rect:
-    x: 68
+    x: 60
     y: 13
-    w: 184
+    w: 199
     h: 105
   motion: pat
   expression: surprised
@@ -98,9 +98,9 @@ hit_areas:
 - name: body
   label: 看她的提词屏
   rect:
-    x: 68
+    x: 60
     y: 118
-    w: 184
+    w: 199
     h: 215
   motion: happy
   expression: neutral

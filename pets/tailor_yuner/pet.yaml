@@ -85,9 +85,9 @@ hit_areas:
 - name: head
   label: 取下别针
   rect:
-    x: 83
+    x: 80
     y: 13
-    w: 154
+    w: 160
     h: 105
   motion: pat
   expression: neutral
@@ -97,9 +97,9 @@ hit_areas:
 - name: body
   label: 看她改的衣服
   rect:
-    x: 83
+    x: 80
     y: 118
-    w: 154
+    w: 160
     h: 215
   motion: happy
   expression: surprised

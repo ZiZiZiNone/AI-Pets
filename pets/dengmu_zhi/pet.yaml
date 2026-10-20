@@ -86,9 +86,9 @@ hit_areas:
 - name: head
   label: 碰她的灯芯
   rect:
-    x: 73
+    x: 64
     y: 13
-    w: 175
+    w: 191
     h: 105
   motion: pat
   expression: smile
@@ -98,9 +98,9 @@ hit_areas:
 - name: body
   label: 接过她的灯
   rect:
-    x: 73
+    x: 64
     y: 118
-    w: 175
+    w: 191
     h: 215
   motion: happy
   expression: surprised

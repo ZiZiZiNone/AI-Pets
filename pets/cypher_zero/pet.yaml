@@ -85,9 +85,9 @@ hit_areas:
 - name: head
   label: 看她发光的义眼
   rect:
-    x: 88
+    x: 79
     y: 13
-    w: 144
+    w: 161
     h: 105
   motion: pat
   expression: surprised
@@ -97,9 +97,9 @@ hit_areas:
 - name: body
   label: 碰她的数据线
   rect:
-    x: 88
+    x: 79
     y: 118
-    w: 144
+    w: 161
     h: 215
   motion: happy
   expression: neutral

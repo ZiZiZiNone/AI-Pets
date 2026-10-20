@@ -89,10 +89,10 @@ hit_areas:
 - name: head
   label: 碰她的旧卷轴
   rect:
-    x: 101
+    x: 103
     y: 13
-    w: 134
-    h: 103
+    w: 123
+    h: 102
   motion: pat
   expression: smile
   texts:
@@ -101,9 +101,9 @@ hit_areas:
 - name: body
   label: 问问旧卷轴的事
   rect:
-    x: 101
-    y: 116
-    w: 134
+    x: 103
+    y: 115
+    w: 123
     h: 212
   motion: happy
   expression: surprised

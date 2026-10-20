@@ -85,10 +85,10 @@ hit_areas:
 - name: head
   label: 摸她的长耳
   rect:
-    x: 73
+    x: 69
     y: 13
-    w: 182
-    h: 103
+    w: 183
+    h: 102
   motion: pat
   expression: surprised
   texts:
@@ -97,10 +97,10 @@ hit_areas:
 - name: body
   label: 看她的箭袋
   rect:
-    x: 73
-    y: 116
-    w: 182
-    h: 213
+    x: 69
+    y: 115
+    w: 183
+    h: 212
   motion: happy
   expression: neutral
   texts:

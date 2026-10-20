@@ -89,9 +89,9 @@ hit_areas:
 - name: head
   label: 碰她的大提琴
   rect:
-    x: 65
+    x: 67
     y: 13
-    w: 189
+    w: 186
     h: 105
   motion: pat
   expression: smile
@@ -101,9 +101,9 @@ hit_areas:
 - name: body
   label: 问问大提琴的事
   rect:
-    x: 65
+    x: 67
     y: 118
-    w: 189
+    w: 186
     h: 215
   motion: happy
   expression: surprised

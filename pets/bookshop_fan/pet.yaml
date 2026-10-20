@@ -103,9 +103,9 @@ hit_areas:
 - name: head
   label: 碰她的口罩
   rect:
-    x: 93
+    x: 88
     y: 13
-    w: 134
+    w: 144
     h: 105
   motion: pat
   expression: smile
@@ -115,9 +115,9 @@ hit_areas:
 - name: body
   label: 问问口罩的事
   rect:
-    x: 93
+    x: 88
     y: 118
-    w: 134
+    w: 144
     h: 215
   motion: happy
   expression: surprised

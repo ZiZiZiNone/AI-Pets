@@ -85,9 +85,9 @@ hit_areas:
 - name: head
   label: 碰安全帽
   rect:
-    x: 97
+    x: 79
     y: 13
-    w: 125
+    w: 162
     h: 105
   motion: pat
   expression: smile
@@ -97,9 +97,9 @@ hit_areas:
 - name: body
   label: 看她擦的窗
   rect:
-    x: 97
+    x: 79
     y: 118
-    w: 125
+    w: 162
     h: 215
   motion: happy
   expression: surprised
