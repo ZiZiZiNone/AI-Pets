@@ -89,12 +89,10 @@ CLICK_JS = """
 (function () {
   var bar = document.querySelector('.inline-chat-bar');
   if (bar) return 'already-open';
-  var b = [...document.querySelectorAll('button')].find(function (x) {
-    return x.textContent.trim() === '对话';
-  });
-  if (!b) return 'no-chat-button';
-  b.click();
-  return 'clicked';
+  // The dock has no "对话" button any more: talking to the pet is the microphone
+  // switch in the companion panel, and the chat bar is the keyboard path.
+  window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true }));
+  return 'sent-ctrl-k';
 })()
 """
 
@@ -102,8 +100,11 @@ OPEN_MENU_JS = """
 (function () {
   var node = document.querySelector('.tactical-wing-node');
   if (node) return 'already-open';
-  var b = [...document.querySelectorAll('button')].find(function (x) {
-    return x.textContent.trim() === '菜单';
+  // The dock buttons carry a label and a hint, so the name is the label, not the whole
+  // button text.
+  var b = [...document.querySelectorAll('.tactical-dock-btn')].find(function (x) {
+    var label = x.querySelector('.dock-label');
+    return (label ? label.textContent : x.textContent).trim() === '菜单';
   });
   if (!b) return 'no-menu-button';
   b.click();
@@ -205,8 +206,9 @@ ENSURE_BLADES_JS = """
   if (document.querySelectorAll('.subdeck-blade').length) return 'blades-present';
   var nodes = document.querySelectorAll('.tactical-wing-node');
   if (!nodes.length) {
-    var button = [...document.querySelectorAll('button')].find(function (x) {
-      return x.textContent.trim() === '菜单';
+    var button = [...document.querySelectorAll('.tactical-dock-btn')].find(function (x) {
+      var label = x.querySelector('.dock-label');
+      return (label ? label.textContent : x.textContent).trim() === '菜单';
     });
     if (!button) return 'no-menu-button';
     button.click();
@@ -429,6 +431,26 @@ def wait_for_debugger(port, timeout):
     if latest:
         return latest
     raise SystemExit(f"the app never opened devtools on port {port} ({last})")
+
+
+def wait_for_page(port, matches, timeout=30):
+    """The one page whose url matches, waiting for it to show up.
+
+    The app opens its windows one after another, so the list of devtools targets grows
+    over the first second. Looking for a specific window in a snapshot of that list is
+    a race; waiting for it is not.
+    """
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            for target in http_json(f"http://127.0.0.1:{port}/json/list"):
+                url = target.get("url") or ""
+                if any(m(url) for m in matches):
+                    return target
+        except (urllib.error.URLError, ConnectionError, OSError, ValueError):
+            pass
+        time.sleep(0.4)
+    raise SystemExit(f"no page on port {port} matched {matches}")
 
 
 def kill_tree(pid):

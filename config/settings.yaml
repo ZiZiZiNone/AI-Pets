@@ -32,7 +32,8 @@ audio:
   rms_smoothing: 0.75
   rms_gain: 3.2
   # 总开关：关掉后只显示气泡文字，不再朗读。三种合成方式互不影响，改 tts.provider 即可切换。
-  enable_tts: true
+  # 默认关闭——朗读太吵，需要时在伴生舱里打开。
+  enable_tts: false
 
   # 语音合成：web_speech（系统语音，零配置）| openai_compatible（云端/自建接口）| local_engine（本地命令行引擎）| none
   tts:
@@ -82,10 +83,13 @@ audio:
       # 留空即可；填一个 wav 绝对路径则直接识别该文件（无麦克风时用来验证本地识别链路）
       input_path: ""
 
-  # 语音识别：默认关闭，避免启动时就弹出麦克风授权。
+  # 语音识别：默认不打开麦克风——在伴生舱里打开「捕捉麦克风」后，桌宠会一直听着，
+  # 你说一句它就回一句。用哪种识别方式由 stt.provider 决定。
   # 可选 none | openai_compatible | local_engine | web_speech
   stt:
-    provider: none
+    provider: web_speech
+    # 捕捉麦克风总开关：true = 桌宠持续监听并自动回应；false = 完全不开麦。
+    enabled: false
     # 识别完成后自动当作聊天输入发送
     auto_send: false
     web_speech:

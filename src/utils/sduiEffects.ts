@@ -18,6 +18,7 @@ export type SduiEffectCommand =
   | { type: 'set_window_climbing'; value: boolean }
   | { type: 'set_click_through'; value: boolean }
   | { type: 'set_tts'; value: boolean }
+  | { type: 'set_mic_capture'; value: boolean }
   | { type: 'set_fps_override'; value: PetFpsOverride }
   | { type: 'set_voice_gain'; percent: number; rmsGain: number }
   | { type: 'say'; text: string; durationMs?: number }
@@ -85,6 +86,10 @@ function planSettingEffect(setting: SduiSettingEffect, value: unknown): SduiEffe
       return typeof value === 'boolean'
         ? [{ type: 'set_tts', value }]
         : [unsupported(setting, '布尔开关')];
+    case 'mic_capture':
+      return typeof value === 'boolean'
+        ? [{ type: 'set_mic_capture', value }]
+        : [unsupported(setting, '布尔开关')];
     case 'fps_mode':
       return isFpsOverride(value)
         ? [{ type: 'set_fps_override', value }]
@@ -106,7 +111,7 @@ function planSettingEffect(setting: SduiSettingEffect, value: unknown): SduiEffe
     default:
       return [
         unsupported(
-          `未知设置项 [${describeUnknown(setting)}]，宿主没有执行；可用的是 window_climbing / click_through / tts / fps_mode / voice_gain`
+          `未知设置项 [${describeUnknown(setting)}]，宿主没有执行；可用的是 window_climbing / click_through / tts / mic_capture / fps_mode / voice_gain`
         ),
       ];
   }

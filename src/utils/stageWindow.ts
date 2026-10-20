@@ -68,11 +68,53 @@ export function centredPosition(
   };
 }
 
+/** A rectangle on screen, in logical pixels. */
+interface ScreenArea {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * A window that is bigger than the screen is a window the user cannot see all of.
+ *
+ * The zoom is allowed to ask for more room than the desktop has; the host answers with
+ * what actually fits, because a pet that is half off the screen is worse than a pet that
+ * is smaller than it asked to be.
+ */
+export function clampSizeToArea(
+  size: { width: number; height: number },
+  area: ScreenArea
+): { width: number; height: number } {
+  return {
+    width: Math.max(1, Math.min(Math.round(size.width), Math.round(area.width))),
+    height: Math.max(1, Math.min(Math.round(size.height), Math.round(area.height))),
+  };
+}
+
+/** Keeps a window inside the screen, without moving it when it already is. */
+export function clampPositionToArea(
+  position: { x: number; y: number },
+  size: { width: number; height: number },
+  area: ScreenArea
+): { x: number; y: number } {
+  const maxX = area.x + area.width - size.width;
+  const maxY = area.y + area.height - size.height;
+  return {
+    x: Math.round(Math.min(Math.max(position.x, area.x), Math.max(area.x, maxX))),
+    y: Math.round(Math.min(Math.max(position.y, area.y), Math.max(area.y, maxY))),
+  };
+}
+
 /**
  * Resize the stage window to fit `scale`, holding the pet still on screen.
  *
  * Tauri grows a window from its top-left corner, which would slide the pet down and to
  * the right on every zoom step. Re-centring after the resize keeps it visually pinned.
+ * The window is also kept inside the monitor's work area, so a zoom that asks for more
+ * room than the desktop has still leaves the whole pet on screen.
+ *
  * Failures are swallowed: the window only has to be big enough, so a rejected resize
  * degrades to a cropped sprite rather than breaking the studio.
  *
@@ -80,17 +122,23 @@ export function centredPosition(
  * in a plain browser or Node context where no host is present.
  */
 export async function applyStageWindowSize(scale: number): Promise<void> {
-  const next = computeStageWindowSize(scale);
+  const requested = computeStageWindowSize(scale);
   try {
-    const [{ LogicalPosition, LogicalSize }, { getCurrentWindow }] = await Promise.all([
-      import('@tauri-apps/api/dpi'),
-      import('@tauri-apps/api/window'),
-    ]);
+    const [{ LogicalPosition, LogicalSize }, { getCurrentWindow, currentMonitor }] =
+      await Promise.all([
+        import('@tauri-apps/api/dpi'),
+        import('@tauri-apps/api/window'),
+      ]);
     const win = getCurrentWindow();
     const outer = await win.outerSize();
     const pos = await win.outerPosition();
     const scaleFactor = await win.scaleFactor();
-    if (outer.width === next.width && outer.height === next.height) return;
+    const area = await readWorkArea(currentMonitor, scaleFactor);
+    const next = area ? clampSizeToArea(requested, area) : requested;
+
+    const physicalWidth = Math.round(next.width * scaleFactor);
+    const physicalHeight = Math.round(next.height * scaleFactor);
+    if (outer.width === physicalWidth && outer.height === physicalHeight) return;
 
     await win.setSize(new LogicalSize(next.width, next.height));
     // outerSize/outerPosition are physical; convert before re-centring.
@@ -100,9 +148,41 @@ export async function applyStageWindowSize(scale: number): Promise<void> {
       width: outer.width / scaleFactor,
       height: outer.height / scaleFactor,
     };
-    const nextPos = centredPosition(outerLogical, next);
+    const centred = centredPosition(outerLogical, next);
+    const nextPos = area ? clampPositionToArea(centred, next, area) : centred;
     await win.setPosition(new LogicalPosition(nextPos.x, nextPos.y));
   } catch {
     // Not running under Tauri (browser preview) or the window is mid-teardown.
   }
+}
+
+/**
+ * The monitor's work area in logical pixels, or null when it cannot be read.
+ *
+ * The work area is what is left of the screen once the taskbar and the other edges are
+ * accounted for, so it is the region a window can actually be seen in.
+ */
+async function readWorkArea(
+  currentMonitor: () => Promise<MonitorLike | null>,
+  scaleFactor: number
+): Promise<ScreenArea | null> {
+  try {
+    const monitor = await currentMonitor();
+    if (!monitor?.workArea) return null;
+    return {
+      x: monitor.workArea.position.x / scaleFactor,
+      y: monitor.workArea.position.y / scaleFactor,
+      width: monitor.workArea.size.width / scaleFactor,
+      height: monitor.workArea.size.height / scaleFactor,
+    };
+  } catch {
+    return null;
+  }
+}
+
+interface MonitorLike {
+  workArea?: {
+    position: { x: number; y: number };
+    size: { width: number; height: number };
+  };
 }

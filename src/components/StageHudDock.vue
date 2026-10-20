@@ -53,43 +53,40 @@
         title="展开双轨战术星盘 (右键 / Ctrl+M)"
         @click.stop="emit('toggle-radial')"
       >
-        菜单
-      </button>
-      <button
-        class="tactical-dock-btn interactive-ui"
-        :class="{ active: petStore.quickChatOpen }"
-        title="唤出内联智能对话与指令舱 (Ctrl+K)"
-        @click.stop="toggleQuickChat"
-      >
-        对话
+        <span class="dock-label">菜单</span>
+        <span class="dock-hint">全部功能</span>
       </button>
       <button
         class="tactical-dock-btn interactive-ui"
         title="投喂全息数据糖果 (+20 能量 / +8 好感)"
         @click.stop="petStore.feedPetCareItem('全息数据糖果', 20, 8, 25)"
       >
-        投喂
+        <span class="dock-label">投喂</span>
+        <span class="dock-hint">加能量</span>
       </button>
       <button
         class="tactical-dock-btn interactive-ui"
         title="打开空间神经突触伴生舱"
         @click.stop="openCompanionCenter"
       >
-        伴生舱
+        <span class="dock-label">伴生舱</span>
+        <span class="dock-hint">设置面板</span>
       </button>
       <button
         class="tactical-dock-btn interactive-ui"
         title="切换下一机体模型"
         @click.stop="cycleNextPet"
       >
-        换宠物
+        <span class="dock-label">换宠物</span>
+        <span class="dock-hint">换角色</span>
       </button>
       <button
         class="tactical-dock-btn interactive-ui"
         title="CAD 全息蓝图校准工坊"
         @click.stop="petStore.studioOpen = !petStore.studioOpen"
       >
-        校准
+        <span class="dock-label">校准</span>
+        <span class="dock-hint">改外观</span>
       </button>
     </div>
 
@@ -204,14 +201,24 @@ let mouthSmoother = createMouthLevelSmoother();
 
 const sttSettings = computed(() => petStore.settings.audio.stt);
 const sttReadiness = computed(() => describeSttReadiness(sttSettings.value));
-const micUsable = computed(() => sttReadiness.value.usable);
+/**
+ * The stage does not need a "talk" button: with the microphone captured the pet already
+ * answers what it hears, so a second button would only offer a second way into the same
+ * thing. What is left is the keyboard path (Ctrl+K), which the chat bar still provides.
+ */
+const continuousListening = computed(() => sttSettings.value.enabled);
+const micUsable = computed(() => sttReadiness.value.usable && !continuousListening.value);
 
 const micButtonLabel = computed(() => {
   if (voiceBusy.value) return '停止';
+  if (continuousListening.value) return '持续聆听';
   return sttSettings.value.provider === 'none' ? '未配置' : '说话';
 });
 
 const micButtonTitle = computed(() => {
+  if (continuousListening.value) {
+    return '麦克风已在持续捕捉，桌宠会自动回应；要去设置里关掉它';
+  }
   if (!sttReadiness.value.usable) return `未就绪：${sttReadiness.value.reason}`;
   const name = sttProviderInfo(sttSettings.value.provider).label;
   return `${name}｜点击开始识别，再点一次停止；结果只填进输入框，不会自动发送`;
@@ -279,11 +286,6 @@ watch(
     }
   }
 );
-
-function toggleQuickChat(): void {
-  petStore.markUserActivity();
-  petStore.quickChatOpen = !petStore.quickChatOpen;
-}
 
 function applySlashHint(cmd: string): void {
   const needsArg = ['/focus', '/break', '/todo', '/calc', '/pet'].includes(cmd);
@@ -365,6 +367,24 @@ function cycleNextPet(): void {
 </script>
 
 <style scoped>
+/**
+ * The chrome has to take the pointer.
+ *
+ * The frame these blocks sit in is `pointer-events: none`, so that the empty space
+ * around the pet does not swallow the clicks meant for the desktop underneath. That
+ * setting is inherited, and none of these blocks said otherwise — so the browser
+ * treated the whole dock as transparent to the pointer. The buttons were drawn, they
+ * carried an `interactive-ui` marker, and pressing them did nothing at all.
+ *
+ * `pointer-events` is inherited, so turning it back on here covers the buttons inside
+ * these blocks as well, and the empty space around the pet stays transparent.
+ */
+.tactical-dock,
+.holo-status-pill,
+.inline-chat-bar {
+  pointer-events: auto;
+}
+
 .holo-status-pill {
   position: absolute;
   top: 8px;
@@ -467,10 +487,16 @@ function cycleNextPet(): void {
  * were hardcoded in this component, which made restyling the dock a source edit. A
  * short text label states the action outright, never truncates, and moves the whole
  * dock into a range a person can aim at.
+ *
+ * The second line says what the button is *for*. The labels alone are the vocabulary of
+ * the host rather than of the person using it — "校准" and "伴生舱" name two features
+ * that have to be opened to be understood — so the hint under each label is what turns
+ * the dock from a list of nouns into a list of things one can do.
  */
 .tactical-dock-btn {
   width: 66px;
-  height: 22px;
+  height: 28px;
+  padding: 2px 4px;
   background: var(--theme-surface, rgba(9, 13, 24, 0.92));
   border: 1px solid var(--theme-border, rgba(56, 189, 248, 0.6));
   clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%);
@@ -482,15 +508,29 @@ function cycleNextPet(): void {
   white-space: nowrap;
   cursor: pointer;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 0;
   box-shadow: 0 6px 16px rgba(2, 6, 23, 0.5);
   transition: all 0.16s ease;
 }
 
+.dock-label {
+  line-height: 1.15;
+}
+
+.dock-hint {
+  font-size: 8px;
+  font-weight: 600;
+  letter-spacing: 0;
+  opacity: 0.72;
+  line-height: 1.15;
+}
+
 .tactical-dock-btn:hover,
 .tactical-dock-btn.active {
-  transform: translateX(-3px) scale(1.08);
+  transform: translateX(-3px) scale(1.04);
   background: var(--theme-primary, #38bdf8);
   color: #020617;
 }
@@ -499,7 +539,9 @@ function cycleNextPet(): void {
   position: absolute;
   bottom: 10px;
   left: 10px;
-  right: 48px;
+  /* 右侧让出状态坞的宽度：dock 占 right:6 到 288px，聊天条原来的 right:48 压住了
+     dock 左侧 24px，聊天条一打开，dock 的按钮就点不到了。 */
+  right: 76px;
   padding: 7px 9px;
   background: var(--theme-surface, rgba(9, 13, 24, 0.95));
   backdrop-filter: blur(16px);

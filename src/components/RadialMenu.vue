@@ -103,6 +103,9 @@
         >
           <span>✕</span>
         </button>
+
+        <!-- The astrolabe is a shape, not an instruction. This says what to do with it. -->
+        <span class="hub-hint">点击节点展开二级菜单 · Esc 关闭</span>
       </div>
 
       <!-- Secondary Holographic Blade Deck -->
@@ -466,6 +469,27 @@ watch(
 .core-lock-btn:hover {
   transform: translate(-50%, -50%) rotate(90deg) scale(1.12);
   background: var(--theme-accent, #f43f5e);
+}
+
+/**
+ * One line under the hub that says what the ring is for.
+ *
+ * The nodes are arranged on an ellipse and the leader lines point at the core, which
+ * reads as an instrument rather than as something to press. Without a sentence, the
+ * only way to find out that a node opens a submenu is to press it.
+ */
+.hub-hint {
+  position: absolute;
+  top: 24px;
+  left: 0;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  color: var(--theme-subtext, #94a3b8);
+  text-shadow: 0 1px 4px rgba(2, 6, 23, 0.95);
+  pointer-events: none;
 }
 
 .holo-subdeck {

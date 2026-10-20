@@ -36,6 +36,7 @@ import StageHudDock from '@/components/StageHudDock.vue';
 import { usePetStore } from '@/store/petStore';
 import { globalLipSync } from '@/utils/audioLipSync';
 import { applyStageWindowSize } from '@/utils/stageWindow';
+import { startContinuousVoice } from '@/utils/continuousVoice';
 import type {
   ActionPriority,
   DesktopWindowState,
@@ -45,6 +46,7 @@ import type {
 } from '@/types/pet';
 import { CLICK_DRAG_THRESHOLD_PX, HUD_HOVER_GRACE_MS, STAGE_HEIGHT_PX, STAGE_WIDTH_PX } from '@/constants/timing';
 import { FALLBACK_HIT_AREA_TEXT, STAGE_MESSAGES } from '@/constants/messages';
+import { createClickThroughGate, isPointerOverHud } from '@/utils/hudHit';
 
 const petStore = usePetStore();
 const stageRef = ref<InstanceType<typeof PetCanvasStage> | null>(null);
@@ -69,18 +71,17 @@ const DROPPED_BUBBLE_MS = 4200;
 
 // The Win32 poller emits cursor events at 33 Hz. Re-issuing an identical click-through
 // command each time costs an IPC round-trip and a forced layout for no benefit, so the
-// command is only sent on an actual transition.
-let appliedClickThrough: boolean | null = null;
+// command is only sent on an actual transition. The requests are also sent in the order
+// they were made: the host applies a whole-window flag, and two commands that cross on
+// their way there would otherwise leave the window in the older command's state while
+// the page believes it is in the newer one.
+const clickThroughGate = createClickThroughGate((ignore) =>
+  invoke('set_stage_click_through', { ignore }).then(() => undefined)
+);
 let releaseDragListeners: (() => void) | null = null;
 
 async function applyClickThrough(ignore: boolean): Promise<void> {
-  if (appliedClickThrough === ignore) return;
-  appliedClickThrough = ignore;
-  try {
-    await invoke('set_stage_click_through', { ignore });
-  } catch {
-    appliedClickThrough = null;
-  }
+  await clickThroughGate.request(ignore);
 }
 
 function isPanelOpen(): boolean {
@@ -148,6 +149,51 @@ function toggleRadialMenu(): void {
   petStore.radialMenuOpen = !petStore.radialMenuOpen;
 }
 
+/**
+ * The pet listens.
+ *
+ * The switch lives in the companion panel, so the stage only reacts to the setting: when
+ * the microphone is captured the pet answers whatever it hears, and when the switch goes
+ * back off the session ends. There is no button to press on the stage — the point of the
+ * switch is that talking to the pet is not a mode you have to enter.
+ */
+let stopContinuousVoice: (() => void) | null = null;
+
+function stopListening(): void {
+  stopContinuousVoice?.();
+  stopContinuousVoice = null;
+}
+
+function startListening(): void {
+  stopListening();
+  const stt = petStore.settings.audio.stt;
+  if (!stt.enabled) return;
+
+  stopContinuousVoice = startContinuousVoice(stt, {
+    onText: (text) => {
+      void petStore.submitUserChatCommand(text);
+    },
+    onStatus: (message) => {
+      petStore.scheduleAction({
+        priority: 'P2',
+        motion: 'idle',
+        expression: 'neutral',
+        text: message,
+        durationMs: 4200,
+      });
+    },
+  });
+}
+
+watch(
+  () => petStore.settings.audio.stt.enabled,
+  (enabled) => {
+    if (enabled) startListening();
+    else stopListening();
+  },
+  { immediate: true }
+);
+
 function handleStudioTransform(scale: number, offsetX: number, offsetY: number): void {
   stageRef.value?.applyLiveTransform(scale, offsetX, offsetY);
 }
@@ -177,7 +223,7 @@ function handleGlobalKeyDown(e: KeyboardEvent): void {
   }
   if (withCommand && e.shiftKey && key === 't') {
     e.preventDefault();
-    appliedClickThrough = null;
+    clickThroughGate.reset();
     void petStore.dispatchPatch({ is_click_through: !petStore.is_click_through });
     return;
   }
@@ -330,7 +376,10 @@ function handleCursorEvent(x: number, y: number): void {
 
   const hit = stageRef.value?.performHitTest(x, y) ?? { hit: false, area: undefined };
   lastHitArea.value = hit.area;
-  if (hit.hit) {
+  // The alpha-mask hit test knows nothing about the dock or the status pill, so a
+  // pointer resting on a control read as "not on the pet" and made the window
+  // click-through with its own buttons still on screen. The chrome is asked directly.
+  if (hit.hit || isPointerOverHud(x, y)) {
     keepHudAlive();
   } else {
     releaseHudSoon();
@@ -459,6 +508,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   releaseDragListeners?.();
+  stopListening();
   window.removeEventListener('keydown', handleGlobalKeyDown);
   for (const off of unlistenFns) off();
   petStore.disposeStage();

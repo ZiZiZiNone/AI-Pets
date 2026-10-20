@@ -347,6 +347,7 @@ export type SduiSettingEffect =
   | 'window_climbing'
   | 'click_through'
   | 'tts'
+  | 'mic_capture'
   | 'fps_mode'
   | 'voice_gain';
 
@@ -585,6 +586,14 @@ export interface VoiceSettings {
   };
   stt: {
     provider: VoiceProviderId;
+    /**
+     * Whether the host keeps the microphone open and answers whatever it hears.
+     *
+     * The provider says *how* a phrase is recognised; this says *whether the pet is
+     * listening at all*. It is the switch the user turns on to talk to the pet and off
+     * again, so it has to be a setting of its own rather than a provider id.
+     */
+    enabled: boolean;
     /** Send a finished transcript to the pet as if it had been typed. */
     auto_send: boolean;
     web_speech: WebSpeechSttConfig;

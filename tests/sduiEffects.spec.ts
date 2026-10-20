@@ -30,6 +30,9 @@ describe('SDUI effect planning', () => {
     expect(planSduiEffect({ kind: 'setting', setting: 'tts' }, true)).toEqual([
       { type: 'set_tts', value: true },
     ]);
+    expect(planSduiEffect({ kind: 'setting', setting: 'mic_capture' }, true)).toEqual([
+      { type: 'set_mic_capture', value: true },
+    ]);
     expect(planSduiEffect({ kind: 'setting', setting: 'fps_mode' }, '30')).toEqual([
       { type: 'set_fps_override', value: '30' },
     ]);

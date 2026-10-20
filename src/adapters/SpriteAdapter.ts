@@ -141,6 +141,36 @@ export class SpriteAdapter implements IPetAdapter {
     };
   }
 
+  /**
+   * Fit the backing store to the canvas element.
+   *
+   * The element grows with the stage window, and the backing store has to follow: a
+   * surface that stays at the old size is either cropped by the element or stretched by
+   * the browser, and the alpha mask — which is what decides where the pet can be clicked
+   * — would be sampled from the wrong picture either way.
+   */
+  public resizeCanvas(): void {
+    if (!this.canvas || !this.ctx) return;
+    const dpr = this.devicePixelRatio();
+    const { w: cssW, h: cssH } = this.stageSize();
+    const width = Math.max(1, Math.round(cssW * dpr));
+    const height = Math.max(1, Math.round(cssH * dpr));
+    const changed = this.canvas.width !== width || this.canvas.height !== height;
+    if (changed) {
+      // Assigning either dimension clears the canvas and resets the context state, so the
+      // transform has to be written again afterwards.
+      this.canvas.width = width;
+      this.canvas.height = height;
+    }
+    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (changed) this.rebuildAlphaBitmask();
+  }
+
+  private devicePixelRatio(): number {
+    if (this.canvas?.dataset.highDpi === '0') return 1;
+    return Math.min(2, window.devicePixelRatio || 1);
+  }
+
   public async load(manifest: PetManifest, canvas: HTMLCanvasElement): Promise<void> {
     this.dispose();
     this.manifest = manifest;
@@ -153,14 +183,7 @@ export class SpriteAdapter implements IPetAdapter {
       y: manifest.model.offset?.y || 0,
     };
 
-    const useHighDpi = canvas.dataset.highDpi !== '0';
-    const dpr = useHighDpi ? Math.min(2, window.devicePixelRatio || 1) : 1;
-    const { w: cssW, h: cssH } = this.stageSize();
-    canvas.width = Math.round(cssW * dpr);
-    canvas.height = Math.round(cssH * dpr);
-    if (this.ctx) {
-      this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    }
+    this.resizeCanvas();
 
     const entryFile = manifest.model.entry || 'idle.svg';
     this.loadedEntryFile = entryFile;

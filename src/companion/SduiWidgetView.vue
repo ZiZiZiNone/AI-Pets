@@ -231,6 +231,10 @@ async function runEffectCommand(command: SduiEffectCommand, subject: string): Pr
       petStore.settings.audio.enable_tts = command.value;
       await petStore.saveHostSettings();
       return;
+    case 'set_mic_capture':
+      petStore.settings.audio.stt.enabled = command.value;
+      await petStore.saveHostSettings();
+      return;
     case 'set_fps_override':
       petStore.setFpsOverride(command.value);
       return;

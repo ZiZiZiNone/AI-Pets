@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   centredPosition,
+  clampPositionToArea,
+  clampSizeToArea,
   clampStageScale,
   computeStageWindowSize,
 } from '@/utils/stageWindow';
@@ -90,6 +92,56 @@ describe('computeStageWindowSize', () => {
       expect(next.height).toBeGreaterThanOrEqual(prev.height);
       prev = next;
     }
+  });
+});
+
+describe('clampSizeToArea', () => {
+  const screen = { x: 0, y: 0, width: 1920, height: 1040 };
+
+  it('leaves a window that fits alone', () => {
+    expect(clampSizeToArea({ width: 360, height: 420 }, screen)).toEqual({
+      width: 360,
+      height: 420,
+    });
+  });
+
+  it('shrinks a window that asks for more room than the screen has', () => {
+    // The zoom is allowed to ask for a huge window; the host answers with what fits,
+    // because a pet that is half off the screen is worse than a smaller pet.
+    const clamped = clampSizeToArea({ width: 4000, height: 3000 }, screen);
+    expect(clamped).toEqual({ width: 1920, height: 1040 });
+  });
+
+  it('never returns a window of zero size', () => {
+    const clamped = clampSizeToArea({ width: 10, height: 10 }, { x: 0, y: 0, width: 0, height: 0 });
+    expect(clamped.width).toBeGreaterThan(0);
+    expect(clamped.height).toBeGreaterThan(0);
+  });
+});
+
+describe('clampPositionToArea', () => {
+  const screen = { x: 0, y: 0, width: 1920, height: 1040 };
+
+  it('does not move a window that is already on screen', () => {
+    const pos = clampPositionToArea({ x: 400, y: 300 }, { width: 360, height: 420 }, screen);
+    expect(pos).toEqual({ x: 400, y: 300 });
+  });
+
+  it('pulls a window that hangs off the right edge back onto the screen', () => {
+    const pos = clampPositionToArea({ x: 1900, y: 300 }, { width: 360, height: 420 }, screen);
+    expect(pos.x).toBe(1920 - 360);
+    expect(pos.y).toBe(300);
+  });
+
+  it('pulls a window that hangs off the top back onto the screen', () => {
+    const pos = clampPositionToArea({ x: 400, y: -50 }, { width: 360, height: 420 }, screen);
+    expect(pos.y).toBe(0);
+    expect(pos.x).toBe(400);
+  });
+
+  it('keeps the top-left corner in place when the window is larger than the screen', () => {
+    const pos = clampPositionToArea({ x: 120, y: 80 }, { width: 3000, height: 2000 }, screen);
+    expect(pos).toEqual({ x: 0, y: 0 });
   });
 });
 

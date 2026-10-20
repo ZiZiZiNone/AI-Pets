@@ -1,7 +1,7 @@
 <template>
   <main class="spatial-pods-stream">
     <div
-      v-for="(widget, idx) in widgets"
+      v-for="(widget, idx) in schema.widgets"
       :key="widget.id"
       class="spatial-pod-card"
       :class="[
@@ -51,12 +51,24 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref, watch } from 'vue';
+import { reactive } from 'vue';
 import SduiWidgetView from './SduiWidgetView.vue';
-import type { SduiSchema, SduiWidget } from '@/types/pet';
+import type { SduiSchema } from '@/types/pet';
 import { POD_NUDGE_STEP_PX } from '@/constants/timing';
 
-const props = defineProps<{
+/**
+ * The pods render the schema's own widgets, not a copy of them.
+ *
+ * A copy was the wrong shape: the companion replaces the whole schema when a remote host
+ * sends a new one, so the copy was replaced with it anyway — but in between, every live
+ * sync of the host's state refreshed the copy from the schema and threw away what the
+ * user had just toggled. A switch would light up, the sync would run, and the switch
+ * would go back to what it said before. The schema is the companion's own state and the
+ * place the host's values are read back into, so it is also the place a local change
+ * belongs.
+ */
+
+defineProps<{
   schema: SduiSchema;
   podOffsets: Record<string, number>;
 }>();
@@ -67,19 +79,6 @@ const emit = defineEmits<{
 }>();
 
 const collapsedPods = reactive<Record<string, boolean>>({});
-
-// The schema arrives through a prop but is driven by a remote host over the bus, so the
-// view works on its own deep copy. Editing in place would otherwise mutate a prop and
-// corrupt the state the companion emits back to the stage.
-const widgets = ref<SduiWidget[]>(structuredClone(props.schema.widgets));
-
-watch(
-  () => props.schema.widgets,
-  (next) => {
-    widgets.value = structuredClone(next);
-  },
-  { deep: true }
-);
 
 function togglePodCollapse(id: string): void {
   collapsedPods[id] = !collapsedPods[id];

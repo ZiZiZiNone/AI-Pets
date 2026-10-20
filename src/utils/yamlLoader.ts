@@ -89,7 +89,10 @@ export const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
     local: DEFAULT_TTS_LOCAL,
   },
   stt: {
-    provider: 'none',
+    // `web_speech` is the only recogniser that needs neither a key nor a download, so it
+    // is the default; `enabled` is what decides whether the microphone is opened at all.
+    provider: 'web_speech',
+    enabled: false,
     auto_send: false,
     web_speech: {
       lang: 'zh-CN',
@@ -513,6 +516,7 @@ export function normalizeVoiceSettings(
     },
     stt: {
       provider: pickProvider(stt.provider, base.stt.provider),
+      enabled: pickBoolean(stt.enabled, base.stt.enabled),
       auto_send: pickBoolean(stt.auto_send, base.stt.auto_send),
       web_speech: {
         lang: pickString(sttWeb.lang, base.stt.web_speech.lang),

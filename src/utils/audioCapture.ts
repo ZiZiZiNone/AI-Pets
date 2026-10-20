@@ -361,7 +361,7 @@ export async function listenWithWebSpeechRecognition(
   });
 }
 
-interface SpeechRecognitionLike {
+export interface SpeechRecognitionLike {
   lang: string;
   continuous: boolean;
   interimResults: boolean;
@@ -377,7 +377,14 @@ interface SpeechRecognitionEventLike {
   results: ArrayLike<{ isFinal: boolean; 0: { transcript: string } }>;
 }
 
-function describeRecognitionFailure(code: string): string {
+/**
+ * Name a recognition failure in words.
+ *
+ * Two of the codes are ordinary rather than failures — the browser ran out of speech and
+ * the session was aborted — and they are reported as an empty message, so a caller can
+ * tell "nothing happened" apart from "something went wrong".
+ */
+export function describeRecognitionFailure(code: string): string {
   switch (code) {
     case 'not-allowed':
     case 'service-not-allowed':

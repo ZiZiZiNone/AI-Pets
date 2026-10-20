@@ -187,6 +187,15 @@ const activeSchema = ref<SduiSchema>({
       effect: { kind: 'setting', setting: 'tts' },
     },
     {
+      id: 'mic_capture',
+      type: 'switch',
+      label: '捕捉麦克风',
+      description:
+        '打开后桌宠一直听着，你说一句它就回一句；关掉就完全不开麦。用哪种识别方式在语音桥里选',
+      value: false,
+      effect: { kind: 'setting', setting: 'mic_capture' },
+    },
+    {
       id: 'fps_mode',
       type: 'select',
       label: 'WebGL 渲染引擎时序策略',
@@ -291,6 +300,7 @@ const liveSettings = computed<Record<SduiSettingEffect, unknown>>(() => ({
   window_climbing: petStore.settings.behavior.enable_window_climbing,
   click_through: petStore.is_click_through,
   tts: petStore.settings.audio.enable_tts,
+  mic_capture: petStore.settings.audio.stt.enabled,
   fps_mode: petStore.fpsOverride,
   voice_gain: Math.round(
     (petStore.settings.audio.rms_gain || DEFAULT_RMS_GAIN) * VOICE_GAIN_PERCENT_SCALE

@@ -19,6 +19,14 @@ export interface IPetAdapter {
   dispose(): void;
   setGravityAcceleration?(accel: number): void;
   spawnInteractionBurst?(x: number, y: number, text?: string): void;
+  /**
+   * Re-fit the drawing surface to the canvas element it was given.
+   *
+   * The stage window grows when the pet is zoomed, and the canvas grows with it. An
+   * adapter that keeps drawing into a surface of the old size either crops the sprite or
+   * stretches it, so the surface has to be re-fitted whenever the element resizes.
+   */
+  resizeCanvas?(): void;
 }
 
 export function matchDeclaredHitArea(

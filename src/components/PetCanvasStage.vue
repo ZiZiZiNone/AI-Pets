@@ -24,8 +24,6 @@ import type { AdapterType, PetManifest } from '@/types/pet';
 import {
   DEFAULT_GRAVITY_PX_S2,
   MAX_FRAME_DELTA_SEC,
-  STAGE_HEIGHT_PX,
-  STAGE_WIDTH_PX,
 } from '@/constants/timing';
 
 const petStore = usePetStore();
@@ -35,9 +33,17 @@ const canvas2dRef = ref<HTMLCanvasElement | null>(null);
 const canvas3dRef = ref<HTMLCanvasElement | null>(null);
 const canvasMode = ref<'2d' | '3d'>('2d');
 
+/**
+ * The stage fills the window instead of holding the authored size.
+ *
+ * The window grows when the pet is zoomed, and the drawing surface has to grow with it:
+ * a canvas that stays at 360x420 crops everything the zoom brought closer, which is
+ * exactly the "the pet is cut in half" complaint. The chrome keeps its own fixed box
+ * (`.pet-ui-frame`), so only the picture follows the window.
+ */
 const stageStyle = {
-  width: `${STAGE_WIDTH_PX}px`,
-  height: `${STAGE_HEIGHT_PX}px`,
+  width: '100%',
+  height: '100%',
 };
 
 const highDpi = computed(() => petStore.settings.render.high_dpi);
@@ -47,6 +53,7 @@ let rafId: number | null = null;
 let loopRunning = false;
 let lastFrameTime = performance.now();
 let mountToken = 0;
+let resizeObserver: ResizeObserver | null = null;
 
 function disposeAdapter(): void {
   adapter?.dispose();
@@ -94,6 +101,8 @@ async function mountManifest(manifest: PetManifest | null): Promise<void> {
   const primaryCanvas = canvasMode.value === '3d' ? canvas3dRef.value : canvas2dRef.value;
   if (!primaryCanvas) return;
 
+  watchCanvasSize(primaryCanvas);
+
   try {
     const built = await buildAdapter(manifest.type, manifest, primaryCanvas, token);
     if (!built) return;
@@ -112,6 +121,8 @@ async function mountManifest(manifest: PetManifest | null): Promise<void> {
   const fallbackCanvas = canvas2dRef.value;
   if (!fallbackCanvas) return;
 
+  watchCanvasSize(fallbackCanvas);
+
   try {
     const fallback = await buildAdapter('sprite', { ...manifest, type: 'sprite' }, fallbackCanvas, token);
     if (!fallback) return;
@@ -120,6 +131,23 @@ async function mountManifest(manifest: PetManifest | null): Promise<void> {
   } catch (err) {
     console.error(`[stage] sprite fallback also failed for ${manifest.id}`, err);
   }
+}
+
+/**
+ * Keep the drawing surface in step with the element it is drawn on.
+ *
+ * The window is resized by the host when the pet is zoomed, and the canvas follows the
+ * window. The adapter only learns about that through its element, so the observer is what
+ * re-fits the backing store; without it the picture would be cropped by the element or
+ * stretched by the browser.
+ */
+function watchCanvasSize(canvas: HTMLCanvasElement): void {
+  resizeObserver?.disconnect();
+  if (typeof ResizeObserver === 'undefined') return;
+  resizeObserver = new ResizeObserver(() => {
+    adapter?.resizeCanvas?.();
+  });
+  resizeObserver.observe(canvas);
 }
 
 /**
@@ -214,6 +242,8 @@ onBeforeUnmount(() => {
     rafId = null;
   }
   loopRunning = false;
+  resizeObserver?.disconnect();
+  resizeObserver = null;
   disposeAdapter();
 });
 </script>

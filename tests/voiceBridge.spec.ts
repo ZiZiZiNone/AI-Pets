@@ -46,11 +46,13 @@ const engineResult = (over: Partial<EngineResult> = {}): EngineResult => ({
 });
 
 describe('voice settings defaults and merging', () => {
-  it('ships a usable default: system voice out of the box, recognition off', () => {
+  it('ships a usable default: system voice out of the box, microphone closed', () => {
     const settings = parseHostSettingsYaml('');
     expect(settings.audio.tts.provider).toBe('web_speech');
-    // Recognition stays off so starting the app never prompts for the microphone.
-    expect(settings.audio.stt.provider).toBe('none');
+    // The recogniser is the system's own, so it needs no key and no download — but the
+    // microphone stays closed, so starting the app never prompts for it.
+    expect(settings.audio.stt.provider).toBe('web_speech');
+    expect(settings.audio.stt.enabled).toBe(false);
     expect(settings.audio.tts.local.args.length).toBeGreaterThan(0);
   });
 
