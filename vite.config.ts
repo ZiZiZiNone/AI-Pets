@@ -23,7 +23,7 @@ const MIME_TYPES: Record<string, string> = {
   '.vrma': 'model/gltf-binary',
 };
 
-function petAssetsPlugin(): Plugin {
+function petAssetsPlugin(): Plugin[] {
   const petsRoot = resolve(__dirname, 'pets') + sep;
   const configRoot = resolve(__dirname, 'config') + sep;
 
@@ -45,67 +45,79 @@ function petAssetsPlugin(): Plugin {
       .sort();
   };
 
-  return {
-    name: 'desktop-pet-assets-bridge',
-    configureServer(server) {
-      server.middlewares.use((req, res, next) => {
-        const rawUrl = req.url?.split('?')[0] || '';
-        if (rawUrl === '/pets/index.json') {
-          res.setHeader('Content-Type', 'application/json; charset=utf-8');
-          res.end(JSON.stringify(listPetIds()));
-          return;
-        }
-        if (rawUrl.startsWith('/pets/') || rawUrl.startsWith('/config/')) {
-          try {
-            const decoded = decodeURIComponent(rawUrl);
-            const filePath = resolve(__dirname, '.' + decoded);
-            if (
-              (filePath.startsWith(petsRoot) || filePath.startsWith(configRoot)) &&
-              fs.existsSync(filePath) &&
-              fs.statSync(filePath).isFile()
-            ) {
-              const ext = filePath.slice(filePath.lastIndexOf('.')).toLowerCase();
-              res.setHeader(
-                'Content-Type',
-                MIME_TYPES[ext] || 'application/octet-stream'
-              );
-              fs.createReadStream(filePath).pipe(res);
-              return;
-            }
-          } catch {
-            // Malformed URI: fall through to the default handler.
+  return [
+    {
+      name: 'desktop-pet-assets-serve',
+      apply: 'serve',
+      configureServer(server) {
+        server.middlewares.use((req, res, next) => {
+          const rawUrl = req.url?.split('?')[0] || '';
+          if (rawUrl === '/pets/index.json') {
+            res.setHeader('Content-Type', 'application/json; charset=utf-8');
+            res.end(JSON.stringify(listPetIds()));
+            return;
           }
-        }
-        next();
-      });
+          if (rawUrl.startsWith('/pets/') || rawUrl.startsWith('/config/')) {
+            try {
+              const decoded = decodeURIComponent(rawUrl);
+              const filePath = resolve(__dirname, '.' + decoded);
+              if (
+                (filePath.startsWith(petsRoot) || filePath.startsWith(configRoot)) &&
+                fs.existsSync(filePath) &&
+                fs.statSync(filePath).isFile()
+              ) {
+                const ext = filePath.slice(filePath.lastIndexOf('.')).toLowerCase();
+                res.setHeader(
+                  'Content-Type',
+                  MIME_TYPES[ext] || 'application/octet-stream'
+                );
+                fs.createReadStream(filePath).pipe(res);
+                return;
+              }
+            } catch {
+              // Malformed URI: fall through to the default handler.
+            }
+          }
+          next();
+        });
+      },
     },
-    closeBundle() {
-      const copyRecursive = (src: string, dest: string) => {
-        if (!fs.existsSync(src)) return;
-        fs.mkdirSync(dest, { recursive: true });
-        for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
-          const srcPath = resolve(src, entry.name);
-          const destPath = resolve(dest, entry.name);
-          if (entry.isDirectory()) copyRecursive(srcPath, destPath);
-          else fs.copyFileSync(srcPath, destPath);
-        }
-      };
-      // The bundle mirrors the repository instead of accumulating into it. A package left
-      // over from a character that has since been redrawn would otherwise be embedded in
-      // the release: the roster would not list it, but the retired art would still ship.
-      const mirror = (src: string, dest: string) => {
-        fs.rmSync(dest, { recursive: true, force: true });
-        copyRecursive(src, dest);
-      };
-      mirror(resolve(__dirname, 'pets'), resolve(__dirname, 'dist/pets'));
-      mirror(resolve(__dirname, 'config'), resolve(__dirname, 'dist/config'));
-      fs.writeFileSync(
-        resolve(__dirname, 'dist/pets/index.json'),
-        JSON.stringify(listPetIds()),
-        'utf8'
-      );
+    {
+      name: 'desktop-pet-assets-build',
+      // The mirror belongs to a build and to nothing else. A dev server and the test
+      // runner both close their bundle, and a close that rewrote `dist/` would leave
+      // the release looking older than the assets it embeds: the build gate would go
+      // red on a machine that had only run the tests.
+      apply: 'build',
+      closeBundle() {
+        const copyRecursive = (src: string, dest: string) => {
+          if (!fs.existsSync(src)) return;
+          fs.mkdirSync(dest, { recursive: true });
+          for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+            const srcPath = resolve(src, entry.name);
+            const destPath = resolve(dest, entry.name);
+            if (entry.isDirectory()) copyRecursive(srcPath, destPath);
+            else fs.copyFileSync(srcPath, destPath);
+          }
+        };
+        // The bundle mirrors the repository instead of accumulating into it. A package
+        // left over from a character that has since been redrawn would otherwise be
+        // embedded in the release: the roster would not list it, but the retired art
+        // would still ship.
+        const mirror = (src: string, dest: string) => {
+          fs.rmSync(dest, { recursive: true, force: true });
+          copyRecursive(src, dest);
+        };
+        mirror(resolve(__dirname, 'pets'), resolve(__dirname, 'dist/pets'));
+        mirror(resolve(__dirname, 'config'), resolve(__dirname, 'dist/config'));
+        fs.writeFileSync(
+          resolve(__dirname, 'dist/pets/index.json'),
+          JSON.stringify(listPetIds()),
+          'utf8'
+        );
+      },
     },
-  };
+  ];
 }
 
 export default defineConfig({
