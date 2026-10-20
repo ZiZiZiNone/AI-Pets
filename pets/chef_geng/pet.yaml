@@ -4,7 +4,7 @@ alias: geng
 cluster: 都市职业
 version: 2.0.0
 type: sprite
-description: 主厨，出菜前会站在那儿看三秒，锅里那点变化瞒不过他
+description: 主厨，出菜前会站在那儿看三秒，锅里那点变化瞒不过她
 model:
   entry: idle.png
   scale: 1.0
@@ -85,9 +85,9 @@ hit_areas:
 - name: head
   label: 碰她的厨师帽
   rect:
-    x: 110
+    x: 97
     y: 13
-    w: 99
+    w: 125
     h: 105
   motion: pat
   expression: neutral
@@ -97,9 +97,9 @@ hit_areas:
 - name: body
   label: 看她握刀的手
   rect:
-    x: 110
+    x: 97
     y: 118
-    w: 99
+    w: 125
     h: 215
   motion: happy
   expression: smile
@@ -184,5 +184,5 @@ ai_pets:
     - small_talk
   body_design:
     age_group: adult
-    height_in_heads: 3.6
-    measurement: 成年女性三点六头身，雾蓝灰厨师服配白围裙
+    height_in_heads: 3.2
+    measurement: 成年女性三点二头身，雾蓝灰厨师服配白围裙
