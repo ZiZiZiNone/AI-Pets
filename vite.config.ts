@@ -108,13 +108,32 @@ function petAssetsPlugin(): Plugin[] {
           fs.rmSync(dest, { recursive: true, force: true });
           copyRecursive(src, dest);
         };
-        mirror(resolve(__dirname, 'pets'), resolve(__dirname, 'dist/pets'));
         mirror(resolve(__dirname, 'config'), resolve(__dirname, 'dist/config'));
-        fs.writeFileSync(
-          resolve(__dirname, 'dist/pets/index.json'),
-          JSON.stringify(listPetIds()),
-          'utf8'
-        );
+
+        /**
+         * The pet art is deliberately *not* mirrored into the bundle.
+         *
+         * Everything the host shows is loaded from disk: the manifest carries the
+         * package's own path, and the sprite is fetched through that path, so the
+         * installed copy is the one that is used. Embedding it as well meant the same
+         * 225 MB of artwork shipped twice — once inside the executable and once beside
+         * it — and the executable alone grew past 240 MB, which is what made a first
+         * launch slow and the installer enormous.
+         *
+         * `PET_ASSETS_IN_DIST=1` brings the mirror back for the one case that needs it:
+         * a static preview in a plain browser, which has no directory of its own to
+         * read the packages from.
+         */
+        if (process.env.PET_ASSETS_IN_DIST === '1') {
+          mirror(resolve(__dirname, 'pets'), resolve(__dirname, 'dist/pets'));
+          fs.writeFileSync(
+            resolve(__dirname, 'dist/pets/index.json'),
+            JSON.stringify(listPetIds()),
+            'utf8'
+          );
+        } else {
+          fs.rmSync(resolve(__dirname, 'dist/pets'), { recursive: true, force: true });
+        }
       },
     },
   ];
