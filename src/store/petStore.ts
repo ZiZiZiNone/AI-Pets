@@ -86,6 +86,30 @@ const PRIORITY_RANK: Record<ActionPriority, number> = { P0: 4, P1: 3, P2: 2, P3:
 // package, so the first frame is a character rather than the neutral placeholder.
 const DEFAULT_PET_ID = 'silverfeather_chibi';
 
+/**
+ * How many items one external program may keep in the astrolabe at a time.
+ *
+ * A quota rather than a free-for-all: the astrolabe is one ring, and a program that
+ * fills it leaves no room for the pet's own menu or for the other programs.
+ */
+const MAX_EXTERNAL_MENU_ITEMS_PER_APP = 8;
+
+/**
+ * One externally registered menu item, as the registry keeps it.
+ *
+ * The item is held apart from its ordering data because the two answer different
+ * questions: the item is what the menu shows, the priority and the sequence are how
+ * the host decides where it goes and which one has to make room for a new one.
+ */
+interface ExternalMenuEntry {
+  /** The item as the program declared it, tagged with the app that registered it. */
+  item: MenuItemSchema;
+  /** Ordering weight: the item's own `priority`, or 0 when it declares none. */
+  priority: number;
+  /** Registration counter. The tiebreak that keeps equal priorities in a stable order. */
+  seq: number;
+}
+
 const STORAGE_KEYS = {
   LLM: 'desktop_pet_llm_config_v2',
   HISTORY: COMMAND_HISTORY_KEY,
@@ -137,7 +161,20 @@ export const usePetStore = defineStore('petStore', () => {
    * to the merged tree, not to the items that happened to come from that file.
    */
   const globalMenuInteraction = ref<MenuInteractionDef>({});
-  const externalMenusByApp = ref<Record<string, MenuItemSchema[]>>({});
+  /**
+   * The menu items external programs registered, grouped by the app that registered them.
+   *
+   * Grouped because a program owns its items: unregistering the app takes its whole
+   * group away, and the quota on how many items one app may show is a per-app rule.
+   */
+  const externalMenuRegistry = ref<Record<string, ExternalMenuEntry[]>>({});
+  /**
+   * The order items were registered in, across every app.
+   *
+   * One counter for all apps so that items from different apps have a single order to
+   * be sorted by; a per-app counter would leave the order between apps undefined.
+   */
+  let externalMenuSeq = 0;
 
   const radialMenuOpen = ref(false);
   const studioOpen = ref(false);
@@ -205,11 +242,51 @@ export const usePetStore = defineStore('petStore', () => {
   const xpProgressPercent = computed(() => careStore.xpProgressPercent);
   const formattedPomodoroTime = computed(() => careStore.formattedPomodoroTime);
 
-  const mergedMenuTree = computed<MenuItemSchema[]>(() => [
-    ...(currentPet.value?.menus || []),
-    ...globalMenus.value,
-    ...Object.values(externalMenusByApp.value).flat(),
-  ]);
+  /**
+   * The registered items, grouped by app, in the order they were registered.
+   *
+   * A view of the registry rather than a second copy of it: two copies would drift
+   * apart, and the registry is the one that decides what the menu shows.
+   */
+  const externalMenusByApp = computed<Record<string, MenuItemSchema[]>>(() => {
+    const grouped: Record<string, MenuItemSchema[]> = {};
+    for (const [appId, entries] of Object.entries(externalMenuRegistry.value)) {
+      grouped[appId] = entries.map((entry) => entry.item);
+    }
+    return grouped;
+  });
+
+  /**
+   * The external items in the order the astrolabe shows them.
+   *
+   * Priority first, bigger in front. The order items were registered in only breaks
+   * ties, because it is not an order a program can rely on: its own items come and go
+   * as its state changes, so an item registered late would otherwise shove the others
+   * around every time the program refreshed itself.
+   */
+  const externalMenuItems = computed<MenuItemSchema[]>(() =>
+    Object.values(externalMenuRegistry.value)
+      .flat()
+      .sort((a, b) => b.priority - a.priority || a.seq - b.seq)
+      .map((entry) => entry.item)
+  );
+
+  /**
+   * The astrolabe's menu, built from what is registered right now.
+   *
+   * Built on demand rather than kept: a program registers, replaces and drops its items
+   * while the menu is closed, so the menu has to be built from the registration state of
+   * the moment it opens.
+   */
+  function buildMenuTree(): MenuItemSchema[] {
+    return [
+      ...(currentPet.value?.menus || []),
+      ...globalMenus.value,
+      ...externalMenuItems.value,
+    ];
+  }
+
+  const mergedMenuTree = computed<MenuItemSchema[]>(buildMenuTree);
 
   /**
    * Menu feel for the active pet: its own `menu_interaction`, else
@@ -716,6 +793,29 @@ export const usePetStore = defineStore('petStore', () => {
     await syncDesktopFullscreenState(usePetStore(), state);
   }
 
+  /**
+   * Take in the menu items an external program contributes.
+   *
+   * Two conventions the program on the other side of the bus has to know:
+   *
+   * - **Registering the same id again replaces the item.** A program that changes its
+   *   own state re-registers the item under the same id with the title of the moment —
+   *   "暂停" becomes "继续" — so the menu shows what is true now instead of a title that
+   *   went stale. This is why an item is looked up by id and not appended blindly:
+   *   appending would leave the old title sitting on the menu next to the new one.
+   * - **The order on the ring comes from `priority`, not from the order of
+   *   registration.** Items come and go, so the registration order of what is on screen
+   *   is not something a program can rely on. `priority` is the only order that
+   *   survives an item being added or taken away.
+   *
+   * One program may keep eight items at a time; a ninth one pushes out the item with
+   * the lowest priority, and the one registered longest ago among equals. An item that
+   * should no longer be on the menu is taken away by unregistering the app.
+   *
+   * An item that would run a command (`action.type: "exec"`) is refused here as well as
+   * in the host: running a command is a capability rather than an extension point, and
+   * the refusal cannot live only on the far side of the bus.
+   */
   function registerExternalMenu(payload: {
     app_id: string;
     menus?: MenuItemSchema[];
@@ -724,20 +824,30 @@ export const usePetStore = defineStore('petStore', () => {
     const { app_id, menus, item } = payload;
     if (!app_id) return;
 
-    if (Array.isArray(menus)) {
-      externalMenusByApp.value = {
-        ...externalMenusByApp.value,
-        [app_id]: menus.map((m) => ({ ...m, app_id })),
-      };
-    } else if (item) {
-      const existing = externalMenusByApp.value[app_id] || [];
-      const index = existing.findIndex((m) => m.id === item.id);
-      const tagged = { ...item, app_id };
-      const next = [...existing];
-      if (index >= 0) next[index] = tagged;
-      else next.push(tagged);
-      externalMenusByApp.value = { ...externalMenusByApp.value, [app_id]: next };
+    const declared = Array.isArray(menus) ? menus : item ? [item] : [];
+    const accepted = declared.flatMap((declaredItem) =>
+      acceptExternalMenuItem(declaredItem, app_id)
+    );
+    if (accepted.length === 0) return;
+
+    const group = [...(externalMenuRegistry.value[app_id] || [])];
+    for (const acceptedItem of accepted) {
+      const priority = readPriority(acceptedItem);
+      const index = group.findIndex((entry) => entry.item.id === acceptedItem.id);
+      if (index >= 0) {
+        // 同一个 id 再注册一次 = 换标题与处理器，位置不动：菜单里的条目不该因为
+        // 程序刷新了一下自己的状态就跳来跳去。
+        group[index] = { item: acceptedItem, priority, seq: group[index].seq };
+        continue;
+      }
+      externalMenuSeq += 1;
+      group.push({ item: acceptedItem, priority, seq: externalMenuSeq });
     }
+
+    externalMenuRegistry.value = {
+      ...externalMenuRegistry.value,
+      [app_id]: enforceExternalMenuQuota(app_id, group),
+    };
 
     scheduleAction({
       priority: 'P2',
@@ -748,11 +858,76 @@ export const usePetStore = defineStore('petStore', () => {
     });
   }
 
+  /**
+   * The parts of a registration the host is willing to show, tagged with the app that
+   * registered them.
+   *
+   * An item that would run a command is dropped rather than shown: the host refuses
+   * `exec` too, but the interface cannot lean on that — an item that runs a command is
+   * a capability rather than an extension point, and the refusal has to happen where
+   * the item is accepted, not only on the other side of the bus.
+   */
+  function acceptExternalMenuItem(item: MenuItemSchema, appId: string): MenuItemSchema[] {
+    if (item.action?.type === 'exec') {
+      console.warn(
+        `[menu] 外部菜单项 [${item.id}] 声明了 action.type=exec，已忽略：` +
+          `外部程序不得通过菜单执行命令。`
+      );
+      return [];
+    }
+    const children =
+      item.children?.flatMap((child) => acceptExternalMenuItem(child, appId)) ?? [];
+    const tagged: MenuItemSchema = { ...item, app_id: appId };
+    if (item.children) tagged.children = children;
+    return [tagged];
+  }
+
+  /**
+   * The ordering weight of an item; no weight declared means no weight at all.
+   *
+   * The value arrives as raw JSON from outside, so a weight that is not a number is
+   * treated as "not declared" rather than left to poison the sort.
+   */
+  function readPriority(item: MenuItemSchema): number {
+    const raw = item.priority;
+    return typeof raw === 'number' && Number.isFinite(raw) ? raw : 0;
+  }
+
+  /**
+   * Keep one app's group inside its quota.
+   *
+   * The lowest priority goes first; among equals the one registered longest ago goes
+   * first, because that is the one the app has had the longest chance to refresh.
+   */
+  function enforceExternalMenuQuota(
+    appId: string,
+    group: ExternalMenuEntry[]
+  ): ExternalMenuEntry[] {
+    const kept = [...group];
+    while (kept.length > MAX_EXTERNAL_MENU_ITEMS_PER_APP) {
+      let victim = 0;
+      for (let i = 1; i < kept.length; i += 1) {
+        const candidate = kept[i];
+        const current = kept[victim];
+        const isWorse =
+          candidate.priority < current.priority ||
+          (candidate.priority === current.priority && candidate.seq < current.seq);
+        if (isWorse) victim = i;
+      }
+      const [evicted] = kept.splice(victim, 1);
+      console.warn(
+        `[menu] 外部程序 [${appId}] 的菜单项超过 ${MAX_EXTERNAL_MENU_ITEMS_PER_APP} 条上限，` +
+          `已淘汰优先级最低的一条：[${evicted.item.id}]（priority=${evicted.priority}）。`
+      );
+    }
+    return kept;
+  }
+
   function unregisterExternalMenu(appId: string): void {
-    if (!externalMenusByApp.value[appId]) return;
-    const next = { ...externalMenusByApp.value };
+    if (!externalMenuRegistry.value[appId]) return;
+    const next = { ...externalMenuRegistry.value };
     delete next[appId];
-    externalMenusByApp.value = next;
+    externalMenuRegistry.value = next;
     void emit('hud-clear', { app_id: appId });
   }
 
@@ -908,6 +1083,7 @@ export const usePetStore = defineStore('petStore', () => {
     xpProgressPercent,
     formattedPomodoroTime,
     mergedMenuTree,
+    buildMenuTree,
     menuInteraction,
     menuInteractionWarnings,
     globalMenuInteraction,

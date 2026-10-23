@@ -162,6 +162,15 @@ import { longPressConsumesPress, planMenuGesture, resolveMenuInteraction } from 
 const petStore = usePetStore();
 const activePrimaryId = ref<string | null>(null);
 
+/**
+ * The menu as it stands right now.
+ *
+ * Rebuilt when the astrolabe opens rather than kept for the whole session: a program
+ * registers, replaces and drops its items while the menu is closed, and an open menu
+ * has to show the registration state of the moment it was opened.
+ */
+const menuTree = ref<MenuItemSchema[]>([]);
+
 const stageCenterX = STAGE_WIDTH_PX / 2;
 const stageViewBox = `0 0 ${STAGE_WIDTH_PX} ${STAGE_HEIGHT_PX}`;
 const hubOrigin = `${stageCenterX} ${RADIAL_MENU_CENTER_Y_PX}`;
@@ -170,7 +179,23 @@ const hubStyle = {
   left: `${stageCenterX}px`,
 };
 
-const primaryItems = computed<MenuItemSchema[]>(() => petStore.mergedMenuTree);
+const primaryItems = computed<MenuItemSchema[]>(() => menuTree.value);
+
+/**
+ * Rebuild the menu from the registration state of the moment.
+ *
+ * Called when the astrolabe opens and whenever the registry changes while it is open,
+ * so a program that refreshes its items is seen without waiting for the next open.
+ */
+function rebuildMenu(): void {
+  const tree = petStore.buildMenuTree();
+  menuTree.value = tree;
+  // The expanded item may have been withdrawn by the program that registered it; holding
+  // on to its id would leave the second level panel pointing at nothing.
+  if (activePrimaryId.value && !tree.some((item) => item.id === activePrimaryId.value)) {
+    activePrimaryId.value = null;
+  }
+}
 
 const activePrimaryItem = computed<MenuItemSchema | undefined>(() =>
   primaryItems.value.find((item) => item.id === activePrimaryId.value)
@@ -319,8 +344,10 @@ watch(
   (isOpen) => {
     if (!isOpen) {
       activePrimaryId.value = null;
+      menuTree.value = [];
       return;
     }
+    rebuildMenu();
     reportInteractionWarnings();
     if (
       petStore.menuInteraction.auto_expand_first &&
@@ -334,6 +361,17 @@ watch(
         activePrimaryId.value = firstWithChildren.id;
       }
     }
+  }
+);
+
+/**
+ * The registry can also change while the menu is open: a program that refreshes its
+ * items after its own state changed has to be seen at once, not at the next open.
+ */
+watch(
+  () => petStore.mergedMenuTree,
+  () => {
+    if (petStore.radialMenuOpen) rebuildMenu();
   }
 );
 </script>
