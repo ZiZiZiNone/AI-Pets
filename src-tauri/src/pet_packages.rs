@@ -53,12 +53,22 @@ pub struct PetPackageScan {
 /// Relative entries resolve against the working directory, matching how the bundled roots
 /// are resolved elsewhere in the host.
 pub fn parse_extra_pet_dirs(settings_yaml: &str) -> Vec<PathBuf> {
+    parse_extra_dirs(settings_yaml, PET_DIRS_KEY)
+}
+
+/// Reads a list of directories declared under `key` in `settings.yaml`.
+///
+/// The pet roots and the plugin roots are both a flat list of paths typed by hand, so
+/// they share one parser and one set of tolerated shapes. A key this host does not
+/// know yields an empty list rather than an error: one malformed line must not stop
+/// the host from finding the packages it already ships with.
+pub fn parse_extra_dirs(settings_yaml: &str, key: &str) -> Vec<PathBuf> {
     let mut dirs: Vec<PathBuf> = Vec::new();
     let mut lines = settings_yaml.lines();
 
     while let Some(line) = lines.next() {
         let trimmed = line.trim_end();
-        let Some(rest) = trimmed.trim_start().strip_prefix(PET_DIRS_KEY) else {
+        let Some(rest) = trimmed.trim_start().strip_prefix(key) else {
             continue;
         };
 
