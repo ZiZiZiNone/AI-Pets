@@ -117,6 +117,8 @@ export interface MenuItemSchema {
   app_id?: string;
   action?: PetActionConfig;
   children?: MenuItemSchema[];
+  /** Larger sorts first. Registration order is not a reliable order once items come and go. */
+  priority?: number;
   /** Overrides the pet-level `menu_interaction` for this item alone. */
   interaction?: MenuInteractionDef;
 }
@@ -631,6 +633,17 @@ export interface HostSettings {
      * this project's tooling or by another pet host; nothing here depends on whose it is.
      */
     pets_dirs?: string[];
+    /**
+     * Extra directories that may hold `<id>/plugin.yaml` packages.
+     *
+     * The same rule as `pets_dirs`: empty by default, so the host looks only at the
+     * plugins it was built with, and a directory is only ever a place to read from.
+     */
+    plugins_dirs?: string[];
+    /**
+     * 每个插件被用户批准的权限名。生效权限 = 清单声明 ∩ 这里。
+     */
+    plugin_approvals?: Record<string, string[]>;
   };
   render: {
     idle_fps: number;

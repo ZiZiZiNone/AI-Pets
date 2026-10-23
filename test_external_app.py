@@ -16,6 +16,14 @@ APP_IDENTIFIER = "com.aipets.microkernel"
 DEFAULT_PORTS = range(9527, 9538)
 SELFTEST_TOKEN = "selftest_token"
 
+# The app id this script registers its privileged calls under.
+#
+# A plugin only gets a capability after the user approves it in the companion panel, so
+# the id has to be one the host knows. The bundled demo plugin is that id: approve
+# `demo_external` and every step below succeeds; leave it unapproved and the host
+# refuses the privileged steps and says why, which is the boundary working as designed.
+DEFAULT_APP_ID = "demo_external"
+
 
 def token_file_candidates() -> list[Path]:
     """Where the host may have written the bus token, nearest first.
@@ -184,7 +192,9 @@ def connect_to_active_pet_port(ports=DEFAULT_PORTS) -> StdlibWebSocketClient:
     raise ConnectionError("AI-Pets not reachable on ports 9527..9537")
 
 
-def run_protocol_steps(ws: StdlibWebSocketClient, token: str, pause_sec: float = 0.8) -> None:
+def run_protocol_steps(
+    ws: StdlibWebSocketClient, token: str, pause_sec: float = 0.8, app_id: str = DEFAULT_APP_ID
+) -> None:
     ws.send_json({
         "token": token,
         "priority": 1,
@@ -210,10 +220,10 @@ def run_protocol_steps(ws: StdlibWebSocketClient, token: str, pause_sec: float =
         "token": token,
         "jsonrpc": "2.0",
         "id": 101,
-        "app_id": "ai_copilot_plugin",
+        "app_id": app_id,
         "method": "menu.register",
         "params": {
-            "app_id": "ai_copilot_plugin",
+            "app_id": app_id,
             "menus": [
                 {
                     "id": "ext_ai_copilot",
@@ -263,13 +273,13 @@ def run_protocol_steps(ws: StdlibWebSocketClient, token: str, pause_sec: float =
         "token": token,
         "jsonrpc": "2.0",
         "id": 102,
-        "app_id": "ai_copilot_plugin",
+        "app_id": app_id,
         "method": "hud.draw",
         "params": {
             "annotations": [
                 {
                     "id": "ext_ai_hud_lock",
-                    "app_id": "ai_copilot_plugin",
+                    "app_id": app_id,
                     "type": "box",
                     "x": 220,
                     "y": 140,
@@ -289,7 +299,7 @@ def run_protocol_steps(ws: StdlibWebSocketClient, token: str, pause_sec: float =
         "token": token,
         "jsonrpc": "2.0",
         "id": 103,
-        "app_id": "ai_copilot_plugin",
+        "app_id": app_id,
         "method": "panel.update",
         "params": {"log_line": "[AI-Copilot] 外部插件热插拔联调通过 ✨"},
     })
@@ -406,11 +416,118 @@ def run_auth_check() -> int:
     return 1
 
 
+def expect_permission_denied(
+    ws: StdlibWebSocketClient, payload: dict, label: str
+) -> bool:
+    """A call the host refused for lack of a capability.
+
+    The refusal is only a boundary if it says which capability was missing, so the
+    reason has to name it — a bare error would leave the plugin author guessing.
+    """
+    ws.send_json(payload)
+    reply = json.loads(ws.recv_text())
+    denied = reply.get("status") == "error" and "权限不足" in reply.get("reason", "")
+    mark = "PASS" if denied else "FAIL"
+    print(f"[{mark}] {label} -> {reply}")
+    return denied
+
+
+def run_permission_check() -> int:
+    """What an outside program can and cannot do before the user approves anything.
+
+    This is the boundary the capability layer introduced, checked against the running
+    host rather than against the source: a program nobody approved may still say
+    something (that is the default permission, and it is what makes an assistant
+    useful), but it may not move the character, mount a menu, draw on the HUD or open a
+    panel — and a method nobody mapped is refused even for an app that holds
+    everything.
+    """
+    token = read_local_token()
+    ws = connect_to_active_pet_port()
+    stranger = "unregistered_probe"
+    try:
+        results = [
+            expect_permission_denied(
+                ws,
+                {
+                    "token": token,
+                    "jsonrpc": "2.0",
+                    "id": 201,
+                    "app_id": stranger,
+                    "method": "pet.act",
+                    "params": {},
+                },
+                "未登记 app 调用 pet.act",
+            ),
+            expect_permission_denied(
+                ws,
+                {
+                    "token": token,
+                    "jsonrpc": "2.0",
+                    "id": 202,
+                    "app_id": stranger,
+                    "method": "hud.draw",
+                    "params": {"annotations": []},
+                },
+                "未登记 app 调用 hud.draw",
+            ),
+            expect_permission_denied(
+                ws,
+                {
+                    "token": token,
+                    "jsonrpc": "2.0",
+                    "id": 203,
+                    "app_id": stranger,
+                    "method": "menu.register",
+                    "params": {"menus": []},
+                },
+                "未登记 app 调用 menu.register",
+            ),
+            expect_permission_denied(
+                ws,
+                {
+                    "token": token,
+                    "jsonrpc": "2.0",
+                    "id": 204,
+                    "app_id": stranger,
+                    "method": "pet.shutdown",
+                    "params": {},
+                },
+                "调用不在允许清单内的方法",
+            ),
+        ]
+
+        # The default permission is the one thing an unapproved app may do.
+        ws.send_json(
+            {
+                "token": token,
+                "priority": 1,
+                "msg_type": "speak",
+                "text": "未登记的程序只有说话这一项默认权限。",
+                "duration_ms": 2000,
+            }
+        )
+        reply = json.loads(ws.recv_text())
+        spoke = reply.get("status") != "error"
+        print(f"[{'PASS' if spoke else 'FAIL'}] 未登记 app 调用 speak -> {reply}")
+        results.append(spoke)
+    finally:
+        ws.close()
+
+    if all(results):
+        print(f"[PASS] {len(results)} 项能力边界全部符合预期。")
+        return 0
+    print(f"[FAIL] {results.count(False)} 项能力边界与预期不符。")
+    return 1
+
+
 def run_external_test() -> int:
     if "--selftest" in sys.argv:
         return run_selftest()
     if "--authcheck" in sys.argv:
         return run_auth_check()
+    if "--permissioncheck" in sys.argv:
+        return run_permission_check()
     try:
         token = read_local_token()
         ws = connect_to_active_pet_port()
@@ -418,8 +535,14 @@ def run_external_test() -> int:
         print(f"[!] {err} (Tip: pass --selftest for offline protocol verification)")
         return 1
 
+    app_id = DEFAULT_APP_ID
+    for arg in sys.argv[1:]:
+        if arg.startswith("--app-id="):
+            app_id = arg.split("=", 1)[1].strip() or DEFAULT_APP_ID
+
+    print(f"[*] 以 app_id「{app_id}」调用；该 id 需在伴生舱的插件页获批才有特权。")
     try:
-        run_protocol_steps(ws, token, pause_sec=0.8)
+        run_protocol_steps(ws, token, pause_sec=0.8, app_id=app_id)
     finally:
         ws.close()
         print("[+] Disconnected.")

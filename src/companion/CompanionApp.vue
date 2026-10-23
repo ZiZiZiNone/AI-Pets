@@ -51,6 +51,9 @@
       <button :class="{ active: activeTab === 'matrix' }" @click="activeTab = 'matrix'">
         🌐 网页与AI脑桥
       </button>
+      <button :class="{ active: activeTab === 'plugins' }" @click="activeTab = 'plugins'">
+        🧩 插件
+      </button>
     </nav>
 
     <PodsTab
@@ -71,11 +74,20 @@
       @log="appendLogLine"
     />
     <WebMatrixTab
-      v-else
+      v-else-if="activeTab === 'matrix'"
       :initial-url="externalUrlInput"
       @input-focus="onInputFocus"
       @input-blur="onInputBlur"
       @log="appendLogLine"
+    />
+    <PluginsTab
+      v-else
+      :manifests="pluginManifests"
+      :issues="pluginIssues"
+      :approvals="pluginApprovals"
+      :effective="effectivePluginPermissions"
+      @toggle="togglePluginPermission"
+      @refresh="loadInstalledPlugins"
     />
 
     <footer class="neural-injector-bar">
@@ -103,8 +115,16 @@ import PodsTab from './PodsTab.vue';
 import FocusTodoTab from './FocusTodoTab.vue';
 import CareFleetTab from './CareFleetTab.vue';
 import WebMatrixTab from './WebMatrixTab.vue';
+import PluginsTab from './PluginsTab.vue';
 import { usePetStore } from '@/store/petStore';
 import type { SduiSchema, SduiSettingEffect, SduiWidget, SystemTelemetry } from '@/types/pet';
+import {
+  effectivePermissions,
+  parsePluginDirectory,
+  type PluginManifest,
+  type PluginManifestIssue,
+  type PluginPermission,
+} from '@/utils/pluginManifest';
 import { COMPANION_LOG_LIMIT, HUD_ANIMATION_BOX, POD_NUDGE_LIMIT_PX, VOICE_GAIN_PERCENT_SCALE } from '@/constants/timing';
 import { formatMemoryMb } from '@/constants/messages';
 import { declaredSettingEffect, readSduiSettingValue } from '@/utils/sduiEffects';
@@ -143,12 +163,14 @@ function applyWidgetValue(widget: SduiWidget, value: unknown): boolean {
 
 const petStore = usePetStore();
 
-const activeTab = ref<'pods' | 'focus' | 'care' | 'matrix'>('pods');
+const activeTab = ref<'pods' | 'focus' | 'care' | 'matrix' | 'plugins'>('pods');
 const panelTitle = ref<string>('空间神经突触伴生舱');
 const externalUrlInput = ref<string>('');
 const quickSayText = ref<string>('');
 const podOffsets = reactive<Record<string, number>>({});
 const unlistenFns: UnlistenFn[] = [];
+const pluginManifests = ref<PluginManifest[]>([]);
+const pluginIssues = ref<PluginManifestIssue[]>([]);
 
 const activeSchema = ref<SduiSchema>({
   app_id: 'host_builtin_panel',
@@ -307,6 +329,100 @@ const liveSettings = computed<Record<SduiSettingEffect, unknown>>(() => ({
   ),
 }));
 
+/**
+ * The approval table as plain data.
+ *
+ * The store's save path clones the whole settings object with `structuredClone`, which
+ * throws on a Vue reactive proxy. A proxy that reached the settings would therefore
+ * break the save and leave the panel blank, so every value is copied out by hand.
+ */
+function plainApprovals(source: Record<string, string[]>): Record<string, string[]> {
+  const copy: Record<string, string[]> = {};
+  for (const [pluginId, permissions] of Object.entries(source)) {
+    copy[pluginId] = [...permissions];
+  }
+  return copy;
+}
+
+/** What the user approved, per plugin. */
+const pluginApprovals = computed<Record<string, string[]>>(() =>
+  plainApprovals(petStore.settings.host.plugin_approvals ?? {})
+);
+
+/**
+ * What each plugin is actually allowed to do: what it declared, intersected with what
+ * the user approved.
+ *
+ * A plugin with nothing effective is left out of the table rather than listed with an
+ * empty list: the bus reads the table as "this app may act at all", so an empty entry
+ * would grant the connection without granting any of the permissions.
+ */
+const effectivePluginPermissions = computed<Record<string, string[]>>(() => {
+  const table: Record<string, string[]> = {};
+  for (const manifest of pluginManifests.value) {
+    const effective = effectivePermissions(manifest, pluginApprovals.value[manifest.id] ?? []);
+    if (effective.length > 0) table[manifest.id] = effective;
+  }
+  return table;
+});
+
+/** Reads the installed plugin manifests. A broken one is reported, not thrown. */
+async function loadInstalledPlugins(): Promise<void> {
+  try {
+    const entries = await invoke<Array<{ dir_name: string; yaml: string }>>(
+      'list_installed_plugins'
+    );
+    const parsed = parsePluginDirectory(
+      entries.map((entry) => ({ dirName: entry.dir_name, yaml: entry.yaml }))
+    );
+    pluginManifests.value = parsed.manifests;
+    pluginIssues.value = parsed.issues;
+  } catch {
+    pluginManifests.value = [];
+    pluginIssues.value = [];
+  }
+}
+
+/**
+ * Hands the bus the table of approved permissions.
+ *
+ * The table is process-wide, so the companion and the stage share it: the companion is
+ * where the user approves, the bus is where the permissions are enforced.
+ */
+async function publishPluginPermissions(): Promise<void> {
+  try {
+    await invoke('set_plugin_permissions', { permissions: effectivePluginPermissions.value });
+  } catch {
+    // The bus command belongs to the enforcement side. Until it is there the approvals
+    // are still recorded in the settings file and take effect as soon as it is.
+  }
+}
+
+/** Records one approval and hands the result to the bus. */
+async function togglePluginPermission(
+  pluginId: string,
+  permission: PluginPermission
+): Promise<void> {
+  const approvals = { ...pluginApprovals.value };
+  const current = approvals[pluginId] ?? [];
+  const next = current.includes(permission)
+    ? current.filter((name) => name !== permission)
+    : [...current, permission];
+  if (next.length > 0) {
+    approvals[pluginId] = next;
+  } else {
+    // A plugin with nothing approved is left out of the table rather than listed with
+    // an empty list: the bus reads the table as "this app may act at all", so an empty
+    // entry would grant the connection without granting any of the permissions.
+    delete approvals[pluginId];
+  }
+  // The settings file is the record of what the user approved; the bus table is
+  // derived from it, never the other way round.
+  petStore.settings.host.plugin_approvals = approvals;
+  await petStore.saveHostSettings();
+  await publishPluginPermissions();
+}
+
 function syncWidgetsFromLiveState(telemetry?: SystemTelemetry): void {
   for (const w of activeSchema.value.widgets) {
     if (w.id === 'host_status' && w.type === 'status_badge' && telemetry) {
@@ -381,6 +497,12 @@ function appendLogLine(line: string): void {
 onMounted(async () => {
   await petStore.initializeHost('companion');
 
+  // The permissions the user approved have to reach the bus even when nobody opens the
+  // plugin sheet, otherwise the bus would start with an empty table and refuse every
+  // plugin until the sheet was visited once.
+  await loadInstalledPlugins();
+  await publishPluginPermissions();
+
   try {
     const telemetry = await invoke<SystemTelemetry>('get_system_telemetry');
     syncWidgetsFromLiveState(telemetry);
@@ -403,6 +525,8 @@ onMounted(async () => {
         await petStore.initializeHost('companion');
         syncWidgetsFromLiveState();
         appendLogLine('[HotReload] Synced updated YAML configs from disk');
+        // The approvals may have been edited by hand while the host was running.
+        await publishPluginPermissions();
       })
     );
 
@@ -455,3 +579,13 @@ onBeforeUnmount(() => {
   for (const fn of unlistenFns) fn();
 });
 </script>
+
+<style scoped>
+/*
+ * The plugin sheet is the fifth tab. The shared rule still lays the bar out in four
+ * columns, which would push the last tab onto a second row.
+ */
+.sector-nav-bar {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+</style>

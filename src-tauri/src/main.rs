@@ -3,6 +3,8 @@
 mod action_executor;
 mod engine_runner;
 mod pet_packages;
+mod plugin_packages;
+mod plugin_permissions;
 mod win32_window;
 mod ws_server;
 
@@ -11,6 +13,7 @@ use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 use pet_packages::{
     collect_pet_packages, parse_extra_pet_dirs, pet_package_roots, PetManifestEntry,
 };
+use plugin_packages::{collect_plugin_packages, plugin_package_roots, PluginPackageEntry};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -453,6 +456,24 @@ fn load_host_configs() -> HostConfigBundle {
     }
 }
 
+/// The plugin packages installed on this machine.
+///
+/// The folder name travels with the manifest because it is the plugin id: a manifest
+/// that declares no id is filed under the folder it was installed from, which is what
+/// lets a plugin be installed by dropping a directory in and nothing else.
+///
+/// The manifests are handed over as text, unparsed. Deciding what a plugin is allowed
+/// to do is the interface's job — the user approves permissions there — and the bus
+/// enforces the result, so nothing on this side may widen it.
+#[tauri::command]
+fn list_installed_plugins() -> Vec<PluginPackageEntry> {
+    let bundled = resolve_project_dir("plugins");
+    let settings =
+        fs::read_to_string(resolve_project_dir("config").join("settings.yaml")).unwrap_or_default();
+    let roots = plugin_package_roots(&bundled, &settings);
+    collect_plugin_packages(&roots)
+}
+
 #[tauri::command]
 fn save_pet_manifest(pet_id: String, yaml_content: String) -> Result<(), String> {
     validate_safe_pet_id(&pet_id)?;
@@ -537,6 +558,27 @@ async fn ws_send_event(
     params: serde_json::Value,
 ) -> Result<(), String> {
     meta.broker.broadcast_event(&app_id, &method, params).await;
+    Ok(())
+}
+
+/// Hand the bus the permissions the user approved.
+///
+/// The frontend has already intersected each plugin's manifest with the user's
+/// decisions, so this command only moves that result into the place the bus
+/// enforces it. The table is replaced wholesale rather than merged, which is
+/// what makes a revoked approval actually disappear.
+///
+/// The permissions live in the broker rather than on disk: the frontend owns
+/// persistence, and the bus has no business reading plugin manifests itself.
+#[tauri::command]
+fn set_plugin_permissions(
+    meta: State<'_, HostRuntimeMeta>,
+    permissions: std::collections::HashMap<String, Vec<String>>,
+) -> Result<(), String> {
+    let unknown = meta.broker.set_permissions(permissions);
+    for name in unknown {
+        eprintln!("[ws_server] 忽略未知权限名：{name}");
+    }
     Ok(())
 }
 
@@ -782,11 +824,13 @@ fn main() {
             set_companion_focusable,
             open_companion_window,
             load_host_configs,
+            list_installed_plugins,
             save_pet_manifest,
             save_host_settings,
             execute_pet_action,
             run_external_engine,
             ws_send_event,
+            set_plugin_permissions,
             snap_pet_to_foreground_window,
             set_edge_peek_mode,
             get_system_telemetry

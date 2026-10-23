@@ -127,6 +127,12 @@ export const DEFAULT_HOST_SETTINGS: HostSettings = {
     // Empty rather than absent: a `pets_dirs` of nothing is a statement the host is making
     // about itself, and saving the file then says so instead of quietly dropping the key.
     pets_dirs: [],
+    // The same statement for plugins: nothing is configured, so only the plugins the
+    // host ships with are found.
+    plugins_dirs: [],
+    // Empty rather than absent, and empty means "nothing approved": a plugin that has
+    // not been approved by the user holds no permission at all.
+    plugin_approvals: {},
   },
   render: {
     idle_fps: 24,
@@ -548,11 +554,42 @@ function normalizePetVoiceDef(raw: unknown): PetVoiceDef | undefined {
   return record as unknown as PetVoiceDef;
 }
 
+/**
+ * The approval table, read defensively.
+ *
+ * The file is edited by hand as often as by the interface, so a plugin id that maps to
+ * anything other than a list of names is dropped instead of being carried into the
+ * permission table the bus reads. A malformed entry must never widen what a plugin is
+ * allowed to do — dropping it is the safe direction.
+ */
+function parsePluginApprovalsYaml(raw: unknown): Record<string, string[]> {
+  const record = asRecord(raw);
+  const approvals: Record<string, string[]> = {};
+  for (const [pluginId, value] of Object.entries(record)) {
+    if (!Array.isArray(value)) continue;
+    const names = value
+      .filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+      .map((entry) => entry.trim());
+    approvals[pluginId] = [...new Set(names)];
+  }
+  return approvals;
+}
+
 export function parseHostSettingsYaml(rawText: string): HostSettings {
   try {
     const raw = (yaml.load(rawText) || {}) as Partial<HostSettings>;
     return {
-      host: { ...DEFAULT_HOST_SETTINGS.host, ...(raw.host || {}) },
+      host: {
+        ...DEFAULT_HOST_SETTINGS.host,
+        ...(raw.host || {}),
+        // Read through their own parsers rather than taken from the spread: `host` is
+        // copied wholesale, so a file saying `plugin_approvals: "yes"` would otherwise
+        // put a string where the bus expects a list of permission names.
+        plugin_approvals: parsePluginApprovalsYaml(raw.host?.plugin_approvals),
+        // A fresh array rather than the default one: the default is a module-level
+        // object, and a caller that edits the list must not edit it for everyone else.
+        plugins_dirs: pickStringArray(raw.host?.plugins_dirs, []),
+      },
       render: { ...DEFAULT_HOST_SETTINGS.render, ...(raw.render || {}) },
       behavior: { ...DEFAULT_HOST_SETTINGS.behavior, ...(raw.behavior || {}) },
       audio: {

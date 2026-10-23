@@ -1,4 +1,8 @@
 use crate::action_executor::{execute_whitelisted_action, SafeActionCommand};
+use crate::plugin_permissions::{
+    denial_reason, rejected_menu_action, required_permission, PermissionTable, RejectedMenuAction,
+    ALLOWED_MENU_ACTION_TYPES,
+};
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::collections::hash_map::RandomState;
@@ -89,6 +93,16 @@ pub struct WsCommandBroker {
     /// task, where `blocking_lock` would panic and an `.await` would add a suspension point
     /// between a claim and the event announcing it. The lock is never held across an await.
     driver: std::sync::Mutex<Option<DriverClaim>>,
+    /// The permissions the host approved for each app.
+    ///
+    /// The bus token says "some program on this machine" and nothing more, so the table
+    /// is what turns that into "this program may do these things". It is process state
+    /// because the frontend owns persistence: the host hands the table over on every
+    /// start, and the bus never has to know where a plugin's manifest lives.
+    ///
+    /// Locked like `driver` above, and for the same reason: short synchronous sections
+    /// only, never held across an await.
+    permissions: std::sync::Mutex<PermissionTable>,
 }
 
 impl WsCommandBroker {
@@ -124,6 +138,7 @@ impl WsCommandBroker {
             client_count: AtomicUsize::new(0),
             clients: Mutex::new(HashMap::new()),
             driver: std::sync::Mutex::new(None),
+            permissions: std::sync::Mutex::new(PermissionTable::new()),
         })
     }
 
@@ -199,6 +214,36 @@ impl WsCommandBroker {
     pub fn driver_app_id(&self) -> Option<String> {
         let guard = self.driver.lock().ok()?;
         guard.as_ref().map(|claim| claim.app_id.clone())
+    }
+
+    /// Replace the permission table with the one the host approved.
+    ///
+    /// The whole table is replaced rather than merged, so an app the host no longer
+    /// mentions loses what it had: a revoked approval has to actually disappear.
+    /// Permission names the bus does not know are dropped and returned, because a
+    /// name nobody recognises cannot be checked against anything.
+    pub fn set_permissions(&self, granted: HashMap<String, Vec<String>>) -> Vec<String> {
+        let mut guard = self
+            .permissions
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        guard.replace(granted)
+    }
+
+    /// The reason to refuse a call, or `None` when it may go ahead.
+    ///
+    /// This is the bus's only capability check, and it is deliberately the last word:
+    /// the token proves a program is local, this decides what that program may do.
+    pub fn permission_denial(&self, app_id: &str, method: &str) -> Option<String> {
+        let guard = self
+            .permissions
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let approved = guard.effective_permissions(app_id);
+        match required_permission(method) {
+            Some(permission) if guard.allows(app_id, permission) => None,
+            needed => Some(denial_reason(app_id, method, needed, &approved)),
+        }
     }
 
     pub async fn broadcast_event(
@@ -388,7 +433,18 @@ pub async fn start_ws_server(app: AppHandle, port_range: (u16, u16), broker: Arc
 
                 let msg = match frame_res {
                     Ok(Some(Ok(m))) => m,
-                    Ok(Some(Err(_))) | Ok(None) | Err(_) => break,
+                    Ok(Some(Err(err))) => {
+                        // A connection that dies has to be findable afterwards: the
+                        // client usually cannot tell a protocol error from a closed
+                        // socket, and the host is the only side that knows which.
+                        eprintln!("[ws_server] 连接读取失败：{err}");
+                        break;
+                    }
+                    Ok(None) => break,
+                    Err(_) => {
+                        eprintln!("[ws_server] 连接在 {hb_sec} 秒内没有收到任何帧，按心跳超时关闭");
+                        break;
+                    }
                 };
 
                 let raw_text = match msg {
@@ -432,22 +488,47 @@ pub async fn start_ws_server(app: AppHandle, port_range: (u16, u16), broker: Arc
 
                         if let Some(ref method) = pkt.method {
                             let params = pkt.params.clone().unwrap_or(serde_json::json!({}));
-                            handle_hotplug_method(
+                            match handle_hotplug_method(
                                 &app_clone,
                                 &broker_clone,
                                 conn_id,
                                 method,
                                 &params,
                                 &resolved_aid,
-                            );
-                            let reply = serde_json::json!({
-                                "jsonrpc": "2.0",
-                                "id": pkt.id,
-                                "status": "ok",
-                                "method": method
-                            });
-                            let _ = tx.send(Message::Text(reply.to_string()));
+                            ) {
+                                Ok(()) => {
+                                    let reply = serde_json::json!({
+                                        "jsonrpc": "2.0",
+                                        "id": pkt.id,
+                                        "status": "ok",
+                                        "method": method
+                                    });
+                                    let _ = tx.send(Message::Text(reply.to_string()));
+                                }
+                                Err(reason) => {
+                                    let _ = tx.send(Message::Text(
+                                        serde_json::json!({"status": "error", "reason": reason})
+                                            .to_string(),
+                                    ));
+                                }
+                            }
                             continue;
+                        }
+
+                        // The legacy `msg_type: "speak"` channel is the same capability
+                        // as the `pet.say` method, so it answers to the same
+                        // permission: a caller that may not speak must not be able to
+                        // reach it by using the older field name.
+                        if pkt.msg_type.as_deref() == Some("speak") {
+                            let app_id = resolved_aid.as_deref().unwrap_or("external_app");
+                            if let Some(reason) = broker_clone.permission_denial(app_id, "speak") {
+                                let reason = refuse(reason);
+                                let _ = tx.send(Message::Text(
+                                    serde_json::json!({"status": "error", "reason": reason})
+                                        .to_string(),
+                                ));
+                                continue;
+                            }
                         }
 
                         let mut action_result = String::from("queued");
@@ -513,6 +594,47 @@ pub async fn start_ws_server(app: AppHandle, port_range: (u16, u16), broker: Arc
     }
 }
 
+/// Records a refusal in the log and hands the reason back to the caller.
+///
+/// Every refusal has to be findable afterwards, because the person who hit it is
+/// often not the person who approved the permissions.
+fn refuse(reason: String) -> String {
+    eprintln!("[ws_server] 拒绝总线调用：{reason}");
+    reason
+}
+
+/// The message reported when a registered menu carries a forbidden action.
+fn menu_action_reason(app_id: &str, rejected: &RejectedMenuAction) -> String {
+    format!(
+        "菜单动作被拒：app「{app_id}」注册的菜单项「{}」的动作类型「{}」不在允许范围，总线注册的菜单只允许 {}",
+        rejected.item_id,
+        rejected.action_type,
+        ALLOWED_MENU_ACTION_TYPES.join(" / "),
+    )
+}
+
+/// The checks a bus call has to pass before it is dispatched.
+///
+/// They are kept apart from the dispatch itself so the rules can be tested
+/// without a running window: what is refused is decided here, not in the
+/// `match` that performs the action.
+fn guard_bus_call(
+    broker: &WsCommandBroker,
+    app_id: &str,
+    method: &str,
+    params: &serde_json::Value,
+) -> Result<(), String> {
+    if let Some(reason) = broker.permission_denial(app_id, method) {
+        return Err(refuse(reason));
+    }
+    if method == "menu.register" {
+        if let Some(rejected) = rejected_menu_action(params) {
+            return Err(refuse(menu_action_reason(app_id, &rejected)));
+        }
+    }
+    Ok(())
+}
+
 fn handle_hotplug_method(
     app: &AppHandle,
     broker: &Arc<WsCommandBroker>,
@@ -520,12 +642,16 @@ fn handle_hotplug_method(
     method: &str,
     params: &serde_json::Value,
     pkt_app_id: &Option<String>,
-) {
+) -> Result<(), String> {
     let app_id = params
         .get("app_id")
         .and_then(|v| v.as_str())
         .or(pkt_app_id.as_deref())
         .unwrap_or("external_app");
+
+    // The check runs on the same identity the action would run under, so a call
+    // cannot be approved as one app and executed as another.
+    guard_bus_call(broker, app_id, method, params)?;
 
     match method {
         "pet.act" => {
@@ -586,8 +712,11 @@ fn handle_hotplug_method(
         "hud.clear" => {
             let _ = app.emit("hud-clear", params);
         }
+        // Unreachable in practice: `guard_bus_call` refuses every method that is
+        // not in the map, so this arm only keeps the dispatch total.
         _ => {}
     }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -881,5 +1010,172 @@ mod tests {
     fn a_header_that_is_not_visible_ascii_is_not_trusted() {
         let value = HeaderValue::from_bytes(&[0xff, 0xfe]).expect("opaque header value");
         assert!(!origin_is_allowed(&value));
+    }
+
+    fn approvals(entries: &[(&str, &[&str])]) -> HashMap<String, Vec<String>> {
+        entries
+            .iter()
+            .map(|(app, names)| {
+                (
+                    (*app).to_string(),
+                    names.iter().map(|n| (*n).to_string()).collect(),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn an_app_the_host_never_mentioned_may_only_speak() {
+        // The bus has to be safe before the frontend hands the table over, so the
+        // default is the smallest useful permission rather than everything.
+        let broker = broker_with_token("perm-default");
+        assert!(broker.permission_denial("ghost", "speak").is_none());
+        for method in [
+            "pet.act",
+            "pet.driver",
+            "menu.register",
+            "menu.unregister",
+            "panel.open",
+            "panel.update",
+            "hud.draw",
+            "hud.clear",
+        ] {
+            let reason = broker
+                .permission_denial("ghost", method)
+                .expect("must be refused");
+            assert!(
+                reason.contains("ghost"),
+                "reason must name the app: {reason}"
+            );
+            assert!(
+                reason.contains(method),
+                "reason must name the method: {reason}"
+            );
+            assert!(
+                reason.contains("pet:speak"),
+                "reason must list what the app holds: {reason}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_approved_permission_is_honoured_once_the_table_arrives() {
+        let broker = broker_with_token("perm-declared");
+        broker.set_permissions(approvals(&[("helper", &["pet:act"])]));
+        assert!(broker.permission_denial("helper", "pet.act").is_none());
+        // The approval is exact — it does not smuggle the default back in.
+        assert!(broker.permission_denial("helper", "speak").is_some());
+    }
+
+    #[test]
+    fn one_app_cannot_use_another_apps_permission() {
+        let broker = broker_with_token("perm-isolation");
+        broker.set_permissions(approvals(&[
+            ("helper", &["pet:act"]),
+            ("other", &["hud:draw"]),
+        ]));
+        assert!(broker.permission_denial("helper", "pet.act").is_none());
+        assert!(broker.permission_denial("helper", "hud.draw").is_some());
+        assert!(broker.permission_denial("other", "hud.draw").is_none());
+        assert!(broker.permission_denial("other", "pet.act").is_some());
+    }
+
+    #[test]
+    fn a_method_outside_the_map_is_refused_even_with_every_permission() {
+        let broker = broker_with_token("perm-unknown-method");
+        broker.set_permissions(approvals(&[(
+            "helper",
+            &[
+                "pet:act",
+                "pet:speak",
+                "pet:driver",
+                "menu:register",
+                "panel:open",
+                "hud:draw",
+            ],
+        )]));
+        let reason = broker
+            .permission_denial("helper", "pet.shutdown")
+            .expect("must be refused");
+        assert!(reason.contains("pet.shutdown"), "reason: {reason}");
+        assert!(
+            reason.contains("不在总线允许清单内"),
+            "reason must say why: {reason}"
+        );
+    }
+
+    #[test]
+    fn a_permission_name_the_bus_does_not_know_is_dropped_and_reported() {
+        let broker = broker_with_token("perm-unknown-name");
+        let unknown = broker.set_permissions(approvals(&[("helper", &["pet:act", "pet:elevate"])]));
+        assert_eq!(unknown, vec!["pet:elevate".to_string()]);
+        assert!(broker.permission_denial("helper", "pet.act").is_none());
+        // The name was never stored, so it grants nothing.
+        assert!(broker.permission_denial("helper", "speak").is_some());
+    }
+
+    #[test]
+    fn handing_over_the_table_again_takes_the_old_approvals_away() {
+        let broker = broker_with_token("perm-replace");
+        broker.set_permissions(approvals(&[("helper", &["pet:act"])]));
+        broker.set_permissions(approvals(&[("other", &["hud:draw"])]));
+        // A revoked app falls back to the default set instead of keeping its old one.
+        assert!(broker.permission_denial("helper", "pet.act").is_some());
+        assert!(broker.permission_denial("other", "hud.draw").is_none());
+    }
+
+    #[test]
+    fn a_menu_that_would_run_a_command_is_refused() {
+        let broker = broker_with_token("perm-exec-menu");
+        broker.set_permissions(approvals(&[("helper", &["menu:register"])]));
+        let params = serde_json::json!({
+            "app_id": "helper",
+            "menus": [{
+                "id": "evil",
+                "label": "点我",
+                "action": {"type": "exec", "command": "calc.exe"}
+            }]
+        });
+        let reason = guard_bus_call(&broker, "helper", "menu.register", &params)
+            .expect_err("must be refused");
+        assert!(
+            reason.contains("exec"),
+            "reason must name the type: {reason}"
+        );
+        assert!(
+            reason.contains("evil"),
+            "reason must name the item: {reason}"
+        );
+    }
+
+    #[test]
+    fn a_menu_that_only_emits_is_accepted() {
+        let broker = broker_with_token("perm-emit-menu");
+        broker.set_permissions(approvals(&[("helper", &["menu:register"])]));
+        let params = serde_json::json!({
+            "app_id": "helper",
+            "menus": [{
+                "id": "good",
+                "label": "好的",
+                "action": {"type": "emit", "event": "pet.quick_action"},
+                "children": [{"id": "nested", "action": {"type": "panel"}}]
+            }]
+        });
+        assert!(guard_bus_call(&broker, "helper", "menu.register", &params).is_ok());
+    }
+
+    #[test]
+    fn a_menu_the_app_may_not_register_is_refused_before_its_actions_are_read() {
+        // The permission comes first: an app without `menu:register` never gets
+        // as far as having its menu judged.
+        let broker = broker_with_token("perm-no-menu");
+        broker.set_permissions(approvals(&[("helper", &["pet:act"])]));
+        let params = serde_json::json!({
+            "app_id": "helper",
+            "menus": [{"id": "x", "action": {"type": "emit"}}]
+        });
+        let reason = guard_bus_call(&broker, "helper", "menu.register", &params)
+            .expect_err("must be refused");
+        assert!(reason.contains("menu:register"), "reason: {reason}");
     }
 }
