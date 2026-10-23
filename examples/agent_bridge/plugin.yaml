@@ -1,0 +1,28 @@
+# 插件清单样例：把「智能体桥」登记成插件。
+#
+# 放到仓库的 plugins/agent_bridge/plugin.yaml，
+# 目录名必须和下面的 id 一致——宿主按目录名索引批准表，
+# 清单写别的 id 会让这个插件继承别人的权限。
+# 宿主还会去找 config/settings.yaml 里 host.plugins_dirs 声明的目录；
+# 同一个 id 出现在两处时，仓库自带的那份生效。
+#
+# 字段只有这五个，多写的会被当成拼写错误报出来：
+#   id / name / version / description / permissions
+#
+# permissions 只能取宿主认得的六个：
+#   pet:act      让桌宠演动作（发 pet.act）
+#   pet:speak    弹气泡（发 pet.say / speak）
+#   pet:driver   接管／归还驱动权（发 pet.driver）
+#   menu:register 注册应用内菜单项
+#   panel:open   打开伴生面板并投递内容
+#   hud:draw     画全屏标注
+#
+# 生效权限 = 这里声明的 ∩ 用户在伴生舱批准的。少写一项，那项就永远调不通。
+id: agent_bridge
+name: AI 编程助手桥
+version: 1.0.0
+description: 让 Claude Code / Codex 等本地 AI 编程助手在干活时通过本地总线驱动桌宠。
+permissions:
+  - pet:act
+  - pet:speak
+  - pet:driver
