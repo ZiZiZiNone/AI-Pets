@@ -81,7 +81,8 @@
     ],
     "resources": [
       "../config/**/*",
-      "../pets/**/*"
+      "../pets/**/*",
+      "../plugins/**/*"
     ]
   }
 }
