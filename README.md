@@ -190,13 +190,22 @@ AI-Pets/
 │   ├── dead-code-scan.mjs        # 死导出扫描（已接入 npm run build）
 │   ├── cycle-scan.mjs            # 导入环检测（已接入 npm run build）
 │   ├── verify.mjs                # 发布前取证（生成 docs/VERIFICATION.md）
+│   ├── release-check.py          # 发布门：把 docs/发布清单.md 整份跑一遍（npm run release:check）
 │   ├── runtime-smoke.py          # 运行真实宿主并探测 WebView2 与页面文案
+│   ├── hud-smoke.py              # 状态坞可点性与星盘可用性
+│   ├── stage-smoke.py            # 画布随窗口生长、桌宠不被裁（含负控制）
+│   ├── mic-smoke.py              # 捕捉麦克风开关能开能关
+│   ├── doctor.py                 # 宿主与插件五段体检
+│   ├── plugin-harness.py         # 插件离线夹具（不起桌宠）
+│   ├── export_codex_pet.py       # 导出 Codex Pet 兼容格式
+│   ├── measure-release-size.py   # 发布产物体积报告
 │   └── fetch_local_voice_engine.py  # 下载本地 TTS/STT 引擎与模型并跑闭环自检
 ├── docs/
 │   ├── 宠物接入指南.md            # 如何新增/替换自己的宠物（不需要改源码）
 │   ├── 插件接入指南.md            # 如何给桌宠加能力：plugin.yaml、权限表与审批（不需要改源码）
 │   ├── 宠物名录.md                # 内置 300 只宠物的名录（短名、简介、人设）
 │   ├── 使用说明书.md              # 面向使用者的完整说明
+│   ├── 发布清单.md                # 发版前照着跑一遍（npm run release:check 可执行）
 │   ├── VERIFICATION.md           # 验证报告（npm run verify 生成）
 │   └── standalone-release.png    # 脱离 dev server 的运行效果
 └── test_external_app.py          # Python 标准库 WebSocket 联调脚本
@@ -213,6 +222,7 @@ npm run test:rust   # cargo test（令牌、鉴权闸门、动作白名单、Win
 npm run scan:dead   # 死导出扫描（src/** + tests/**，发现冗余即退出码 1）
 npm run scan:cycles # 导入环检测（值环退出码 1，类型环仅报告）
 npm run verify      # 发布前取证（七项）：PE 取证 / git 比对 / 残留 / 死导出 / 导入环 / Rust 门禁 / diff
+npm run release:check  # 发布门：把 docs/发布清单.md 整份跑一遍并给出总表（实机探针受时间窗限制）
 python scripts/runtime-smoke.py  # 启动真实宿主，探测 WebView2 能力与识别入口文案（会自行关闭）
 npm run build       # 类型检查 + 死导出扫描 + 导入环检测 + 生产构建
 npm run tauri dev   # 启动桌面宿主（开发，连接 Vite dev server）
