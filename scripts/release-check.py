@@ -209,6 +209,25 @@ class Runner:
         _, output = self._exec(["git", "status", "--short"])
         return output
 
+    def dry_run(self) -> int:
+        """只把「要跑什么」列出来，不真的跑。
+
+        用途有两个：一是让人在动手前先看清楚这次会不会开窗口（实机探针那一段），
+        二是给自检提供一份「命令清单」——探针脚本被改名或删掉时，这里会立刻发现，
+        不用等到真跑起来才发现找不到文件。
+        """
+        steps = build_steps(self.args, self)
+        print(f"共 {len(steps)} 步（dry-run：一条都不会执行）\n")
+        current = ""
+        for step in steps:
+            if step.section != current:
+                current = step.section
+                print(f"[{current}]")
+            marker = "（实机，会开窗口）" if step.gui else ""
+            command = " ".join(step.command) if step.command else "（读文件判断）"
+            print(f"  {step.title}{marker}\n      $ {command}")
+        return 0
+
     # ---------------------------------------------------------------- 时间窗
 
     @staticmethod
@@ -696,6 +715,17 @@ def self_test() -> int:
     if sorted(offline_steps) != sorted(["plugin_harness", "protocol_selftest"]):
         failures.append(f"离线探针的标记不对：{offline_steps}")
 
+    # 探针脚本必须真的在：被改名或删掉时，这里立刻发现，而不是等真跑起来才报
+    # 「文件不存在」。
+    for step in full:
+        if step.section != "探针" or not step.command:
+            continue
+        for argument in step.command[1:]:
+            if argument.endswith(".py"):
+                if not Path(argument).is_file():
+                    failures.append(f"探针脚本不存在：{argument}")
+                break
+
     if failures:
         print("自检没过：")
         for failure in failures:
@@ -710,6 +740,9 @@ def main(argv=None) -> int:
     parser.add_argument("--skip-gui", action="store_true", help="不跑实机探针（只跑离线的门）")
     parser.add_argument("--skip-build", action="store_true", help="不重新构建 release 二进制")
     parser.add_argument("--self-test", action="store_true", help="只跑脚本自己的自检（不开窗口、不需要仓库）")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="只列出要跑什么，不执行（不会开窗口）"
+    )
     parser.add_argument("--json", dest="as_json", action="store_true", help="输出 JSON 结果")
     args = parser.parse_args(argv)
 
@@ -718,6 +751,8 @@ def main(argv=None) -> int:
 
     runner = Runner(args)
     runner.prepare_rust_route()
+    if args.dry_run:
+        return runner.dry_run()
     if args.skip_build:
         runner.notes.append(
             "用了 --skip-build：跳过前端构建与 release 构建，"
