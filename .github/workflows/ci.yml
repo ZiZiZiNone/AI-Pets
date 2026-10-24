@@ -41,6 +41,18 @@ jobs:
       - name: Protocol harness self-test
         run: python test_external_app.py --selftest
 
+      # The release gate is the one thing that decides whether a tag may be pushed.
+      # Its own self-test is cheap and offline: it checks the time-window boundaries and
+      # that the step list still covers every gate the checklist names.
+      - name: Release gate self-test
+        run: python scripts/release-check.py --self-test
+
+      # The plugin manifest is read by two parsers — the interface's and the tooling's.
+      # A manifest one of them rejects leaves the plugin tab empty while the offline
+      # harness says everything is fine, so the example plugin has to satisfy both.
+      - name: Plugin manifest self-check
+        run: python scripts/plugin-harness.py plugins/demo_external
+
   rust:
     name: Rust gates
     runs-on: windows-latest

@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import {
   PLUGIN_PERMISSIONS,
   effectivePermissions,
@@ -209,5 +211,34 @@ describe('effective permissions', () => {
   it('grants nothing when the manifest declares nothing', () => {
     const manifest = manifestOf({ permissions: [] });
     expect(effectivePermissions(manifest, [...PLUGIN_PERMISSIONS])).toEqual([]);
+  });
+});
+
+/**
+ * The repository's own plugin has to satisfy the same parser the host uses.
+ *
+ * Two parsers read the same file — this one in the interface, `scripts/plugin-harness.py`
+ * in the tooling — and a manifest written for one but not the other is how the plugin tab
+ * ends up empty while the offline harness says everything is fine. The example plugin is
+ * the one file both of them always read, so it is the one file that has to be accepted.
+ */
+describe('the bundled example plugin', () => {
+  const manifestPath = resolve(process.cwd(), 'plugins', 'demo_external', 'plugin.yaml');
+
+  it('exists and is accepted by the parser the host uses', () => {
+    const raw = readFileSync(manifestPath, 'utf8');
+    const { manifest, issues } = parsePluginManifest(raw, 'demo_external');
+    expect(issues.filter((issue) => issue.field === 'permissions')).toEqual([]);
+    expect(manifest).not.toBeNull();
+    expect(manifest?.id).toBe('demo_external');
+    expect(manifest?.permissions.length).toBeGreaterThan(0);
+  });
+
+  it('declares only permissions the host knows', () => {
+    const raw = readFileSync(manifestPath, 'utf8');
+    const { manifest } = parsePluginManifest(raw, 'demo_external');
+    for (const permission of manifest?.permissions ?? []) {
+      expect(PLUGIN_PERMISSIONS).toContain(permission);
+    }
   });
 });

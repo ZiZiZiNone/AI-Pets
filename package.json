@@ -16,6 +16,7 @@
     "scan:dead": "node scripts/dead-code-scan.mjs",
     "scan:cycles": "node scripts/cycle-scan.mjs",
     "verify": "node scripts/verify.mjs",
+    "release:check": "python scripts/release-check.py",
     "build": "npm run typecheck && npm run scan:dead && npm run scan:cycles && vite build",
     "preview": "vite preview",
     "tauri": "tauri"
