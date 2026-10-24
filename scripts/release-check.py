@@ -42,6 +42,9 @@ PY = sys.executable
 # 时间窗：清单 2.0 的硬约定。窗口之外只做离线的事，不开窗口。
 GUI_WINDOWS = ((0, 0, 12, 0), (13, 30, 19, 0))
 
+# 取证那一步会重写这份报告，所以它不算「跑出来的意外文件」。
+VERIFICATION_REPORT = "docs/VERIFICATION.md"
+
 # 本机的 MinGW 路线（清单 0.2 里那三条环境变量指向的地方）。
 MINGW_BIN = Path(r"E:\AI\mingw64\mingw64\bin")
 GNU_TOOLCHAIN = "stable-x86_64-pc-windows-gnu"
@@ -102,6 +105,8 @@ class Runner:
         self.notes: list[str] = []
         self.gnu_route_applied = False
         self.cargo_exe: str | None = None
+        #: 开跑前的工作树状态，用来判断跑完之后有没有冒出预料之外的东西。
+        self.baseline_status = ""
 
     # ---------------------------------------------------------------- 工具链
 
@@ -198,6 +203,11 @@ class Runner:
             return proc.returncode, (proc.stdout or "") + (proc.stderr or "")
         except FileNotFoundError as exc:
             return 127, f"命令不存在：{exc}"
+
+    def current_status(self) -> str:
+        """工作树现在的样子（`git status --short` 的输出）。"""
+        _, output = self._exec(["git", "status", "--short"])
+        return output
 
     # ---------------------------------------------------------------- 时间窗
 
@@ -321,6 +331,25 @@ class Runner:
     def working_tree_clean(output: str) -> bool:
         return output.strip() == ""
 
+    def tree_matches_baseline(self, output: str) -> bool:
+        """工作树跟开跑前一样吗？
+
+        比的是**开跑前**的状态，不是现在的：取证那一步会重写 `docs/VERIFICATION.md`，
+        那是它该做的事。如果拿「跑完之后」的树去比，这一步会永远红——它自己把文件改脏了。
+        真正要抓的是「开跑前就不干净」和「跑的过程中冒出了预料之外的东西」。
+        """
+        current = [
+            line
+            for line in output.strip().splitlines()
+            if line.strip() and VERIFICATION_REPORT not in line
+        ]
+        baseline = [
+            line
+            for line in self.baseline_status.strip().splitlines()
+            if line.strip() and VERIFICATION_REPORT not in line
+        ]
+        return sorted(current) == sorted(baseline)
+
     @staticmethod
     def tag_matches_version() -> tuple[bool, str]:
         import re
@@ -342,12 +371,12 @@ class Runner:
         return tagged, f"v{version} {'已存在' if tagged else '还没打'}"
 
 
-def build_steps(args, cargo_exe: str | None = None) -> list[Step]:
+def build_steps(args, runner) -> list[Step]:
     # cargo 的 `--manifest-path` 跟在**子命令后面**：写成 `cargo --manifest-path … fmt`
     # 会被 cargo 当成「未知参数」直接拒掉（它只认 `cargo fmt --manifest-path …`）。
     def cargo_cmd(subcommand: str, *rest: str) -> list[str]:
         return [
-            cargo_exe or "cargo",
+            runner.cargo_exe or "cargo",
             subcommand,
             "--manifest-path",
             str(REPO / "src-tauri" / "Cargo.toml"),
@@ -547,11 +576,11 @@ def build_steps(args, cargo_exe: str | None = None) -> list[Step]:
     steps.append(
         Step(
             "worktree",
-            "工作树干净（没有意外产物）",
+            "工作树没有意外产物（跟开跑前一致）",
             section="发布就绪",
             command=["git", "status", "--short"],
-            check=lambda out: Runner.working_tree_clean(out),
-            failure="还有没提交的改动或没被忽略的临时文件",
+            check=lambda out: runner.tree_matches_baseline(out),
+            failure="开跑前工作树就不干净，或跑的过程中冒出了预料之外的文件",
         )
     )
     steps.append(
@@ -572,6 +601,14 @@ def build_steps(args, cargo_exe: str | None = None) -> list[Step]:
         )
     )
     return steps
+
+
+def _self_test_runner(cargo_exe: str) -> "Runner":
+    """自检用的空壳 Runner：只需要一个能提供 cargo 路径与基线状态的对象。"""
+    runner = Runner(argparse.Namespace(skip_gui=True, skip_build=True))
+    runner.cargo_exe = cargo_exe
+    runner.baseline_status = ""
+    return runner
 
 
 def self_test() -> int:
@@ -600,8 +637,12 @@ def self_test() -> int:
         if actual != expected:
             failures.append(f"时间窗 {hour:02d}:{minute:02d} 判定为 {actual}，应为 {expected}")
 
-    full = build_steps(argparse.Namespace(skip_gui=True, skip_build=False), cargo_exe=r"E:\x\cargo.exe")
-    steps = build_steps(argparse.Namespace(skip_gui=True, skip_build=True), cargo_exe=r"E:\x\cargo.exe")
+    full = build_steps(
+        argparse.Namespace(skip_gui=True, skip_build=False), _self_test_runner(r"E:\x\cargo.exe")
+    )
+    steps = build_steps(
+        argparse.Namespace(skip_gui=True, skip_build=True), _self_test_runner(r"E:\x\cargo.exe")
+    )
     keys = [step.key for step in full]
     expected_keys = [
         "toolchain",
@@ -682,6 +723,7 @@ def main(argv=None) -> int:
             "用了 --skip-build：跳过前端构建与 release 构建，"
             "现成的 exe 必须已经比 dist/ 新，否则取证会报 STALE BINARY"
         )
+    runner.baseline_status = runner.current_status()
 
     now = datetime.now()
     print("=" * 72)
@@ -693,7 +735,7 @@ def main(argv=None) -> int:
         print("· 现在不在实机测试时间窗（00:00~12:00 / 13:30~19:00），实机探针不会执行")
     print("=" * 72)
 
-    for step in build_steps(args, runner.cargo_exe):
+    for step in build_steps(args, runner):
         result = runner.run_step(step)
         runner.results.append(result)
 
